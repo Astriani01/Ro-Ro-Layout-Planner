@@ -292,43 +292,97 @@ def calculate_statistics():
         'vehicle_types': vehicle_types
     }
 
-# FUNGSI UTAMA: Membuat visualisasi kapal dengan diagram grid
-def create_ship_grid_visualization():
+# FUNGSI UTAMA: Membuat visualisasi seperti gambar
+def create_ship_visualization_like_image():
     ship_layout = st.session_state.ship_layout
     vehicles = st.session_state.vehicles
     
-    # Buat figure
+    # Buat figure dengan orientasi seperti gambar
     fig = go.Figure()
     
-    # Tambahkan outline kapal
+    # Tambahkan background kapal
     fig.add_shape(
         type="rect",
         x0=0, y0=0,
         x1=ship_layout['width'], 
         y1=ship_layout['length'],
-        fillcolor='#f8f9fa',
-        line=dict(color='#1a2980', width=3),
+        fillcolor='white',
+        line=dict(color='black', width=2),
         layer='below'
     )
     
-    # Tambahkan grid lines (garis bantu)
-    # Horizontal lines (Y-axis)
-    for y in np.arange(0, ship_layout['length'] + 1, 1):
+    # Tambahkan grid lines sesuai gambar
+    # Horizontal lines (untuk panjang)
+    for y in np.arange(0, ship_layout['length'] + 1, 2):
         fig.add_shape(
             type="line",
             x0=0, y0=y, x1=ship_layout['width'], y1=y,
-            line=dict(color="rgba(0,0,0,0.2)", width=1),
+            line=dict(color="lightgray", width=1),
             layer='below'
         )
     
-    # Vertical lines (X-axis)
-    for x in np.arange(0, ship_layout['width'] + 1, 1):
+    # Vertical lines (untuk lebar)
+    for x in np.arange(0, ship_layout['width'] + 1, 2):
         fig.add_shape(
             type="line",
             x0=x, y0=0, x1=x, y1=ship_layout['length'],
-            line=dict(color="rgba(0,0,0,0.2)", width=1),
+            line=dict(color="lightgray", width=1),
             layer='below'
         )
+    
+    # Tambahkan teks untuk sumbu Y (Panjang) di kiri
+    # Sumbu Y: 14, 12, 10, 8, 6, 4, 2 (dari atas ke bawah)
+    y_labels = [14, 12, 10, 8, 6, 4, 2]
+    for label in y_labels:
+        if label <= ship_layout['length']:
+            fig.add_annotation(
+                x=-0.5,
+                y=label,
+                text=str(label),
+                showarrow=False,
+                font=dict(size=12, color="black"),
+                xref="x",
+                yref="y",
+                xanchor="right"
+            )
+    
+    # Tambahkan teks untuk sumbu X (Lebar) di bawah
+    # Sumbu X: 0, 2, 4, 6, 8, 10
+    x_labels = [0, 2, 4, 6, 8, 10]
+    for label in x_labels:
+        if label <= ship_layout['width']:
+            fig.add_annotation(
+                x=label,
+                y=-0.5,
+                text=str(label),
+                showarrow=False,
+                font=dict(size=12, color="black"),
+                xref="x",
+                yref="y",
+                yanchor="top"
+            )
+    
+    # Tambahkan label sumbu
+    fig.add_annotation(
+        x=-1.5,
+        y=ship_layout['length']/2,
+        text="Panjang (meter)",
+        showarrow=False,
+        font=dict(size=14, color="black"),
+        textangle=-90,
+        xref="x",
+        yref="y"
+    )
+    
+    fig.add_annotation(
+        x=ship_layout['width']/2,
+        y=-1.5,
+        text="Lebar (meter)",
+        showarrow=False,
+        font=dict(size=14, color="black"),
+        xref="x",
+        yref="y"
+    )
     
     # Tambahkan kendaraan sebagai persegi panjang
     for vehicle in vehicles:
@@ -352,7 +406,7 @@ def create_ship_grid_visualization():
             showlegend=False
         ))
         
-        # Tambahkan teks di tengah kendaraan
+        # Tambahkan ikon di tengah kendaraan
         center_x = (x0 + x1) / 2
         center_y = (y0 + y1) / 2
         
@@ -361,19 +415,19 @@ def create_ship_grid_visualization():
             y=[center_y],
             mode='text',
             text=[vehicle['icon']],
-            textfont=dict(size=16, color='white'),
+            textfont=dict(size=14, color='white'),
             showlegend=False,
             hoverinfo='none'
         ))
         
-        # Tambahkan label koordinat jika kendaraan cukup besar
+        # Tambahkan ID kendaraan jika cukup besar
         if vehicle['length'] > 2 and vehicle['width'] > 1:
             fig.add_annotation(
                 x=center_x,
-                y=center_y,
-                text=f"({vehicle['x']:.1f}, {vehicle['y']:.1f})",
+                y=center_y - 0.5,
+                text=f"ID: {vehicle['id']}",
                 showarrow=False,
-                font=dict(size=9, color='white'),
+                font=dict(size=10, color='white'),
                 bgcolor='rgba(0,0,0,0.5)',
                 bordercolor='white',
                 borderwidth=1,
@@ -393,57 +447,53 @@ def create_ship_grid_visualization():
             x=[x0, x1, x1, x0, x0],
             y=[y0, y0, y1, y1, y0],
             mode='lines',
-            line=dict(color='yellow', width=4, dash='dash'),
+            line=dict(color='yellow', width=4),
             name='Selected',
             showlegend=False,
             hoverinfo='none'
         ))
         
-        # Titik pojok
+        # Tambahkan titik di pojok
         fig.add_trace(go.Scatter(
             x=[x0, x1, x1, x0],
             y=[y0, y0, y1, y1],
             mode='markers',
-            marker=dict(color='yellow', size=8),
+            marker=dict(color='yellow', size=10),
             showlegend=False,
             hoverinfo='none'
         ))
     
-    # Konfigurasi layout dengan grid
+    # Konfigurasi layout sesuai gambar
     fig.update_layout(
-        title=f"Diagram Grid Kapal (Skala Sebenarnya) - {ship_layout['length']}m × {ship_layout['width']}m",
-        xaxis_title="Lebar Kapal (meter)",
-        yaxis_title="Panjang Kapal (meter)",
-        width=800,
-        height=600,
+        title=f"Layout Kapal Ro-Ro - {ship_layout['length']}m × {ship_layout['width']}m",
+        width=700,
+        height=700,
         xaxis=dict(
-            range=[-0.5, ship_layout['width'] + 0.5],
-            gridcolor="rgba(0,0,0,0.3)",
-            showgrid=True,
-            dtick=1,
-            tick0=0,
-            tickmode='linear',
-            tickfont=dict(size=12)
+            range=[-2, ship_layout['width'] + 1],
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            showline=False
         ),
         yaxis=dict(
-            range=[-0.5, ship_layout['length'] + 0.5],
-            gridcolor="rgba(0,0,0,0.3)",
-            showgrid=True,
-            dtick=1,
-            tick0=0,
-            tickmode='linear',
-            tickfont=dict(size=12)
+            range=[-2, ship_layout['length'] + 1],
+            showgrid=False,
+            zeroline=False,
+            showticklabels=False,
+            showline=False,
+            scaleanchor="x",
+            scaleratio=1
         ),
         plot_bgcolor="white",
         paper_bgcolor="white",
         showlegend=False,
-        margin=dict(l=20, r=20, t=50, b=20),
+        margin=dict(l=50, r=20, t=50, b=50),
         hovermode='closest'
     )
     
-    # Pastikan skala proporsional
-    fig.update_xaxes(constrain='domain', scaleratio=1)
-    fig.update_yaxes(constrain='domain', scaleratio=1)
+    # Tambahkan grid area di belakang
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False)
     
     return fig
 
@@ -469,7 +519,7 @@ def import_layout(json_str):
 
 # UI Header
 st.markdown('<h1 class="main-header">🚢 Ro-Ro Layout Planner</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Atur layout kapal Ro-Ro dengan diagram grid skala sebenarnya</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Atur layout kapal Ro-Ro dengan diagram grid</p>', unsafe_allow_html=True)
 
 # Layout utama
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -569,8 +619,8 @@ with col1:
 with col2:
     st.markdown("### 🗺️ Diagram Grid Kapal")
     
-    # Visualisasi kapal dengan grid
-    fig = create_ship_grid_visualization()
+    # Visualisasi kapal seperti gambar
+    fig = create_ship_visualization_like_image()
     st.plotly_chart(fig, use_container_width=True)
     
     # Statistik kapal
@@ -841,7 +891,7 @@ st.markdown("""
 **Tips:**
 - Sistem otomatis mencegah tabrakan antar kendaraan
 - Setiap kendaraan memiliki warna unik untuk identifikasi
-- Grid 1m × 1m untuk referensi posisi
+- Grid 2m × 2m untuk referensi posisi
 - Koordinat ditampilkan dalam meter (skala sebenarnya)
 """)
 
