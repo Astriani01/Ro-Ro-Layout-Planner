@@ -1,11 +1,15 @@
-# app.py - Aplikasi Layout Kapal Ro-Ro
+# app.py - Aplikasi Layout Kapal Ro-Ro dengan Diagram Kartesius
 import streamlit as st
 import pandas as pd
 import numpy as np
 import json
 import plotly.graph_objects as go
+import plotly.express as px
 import random
+import math
 from io import BytesIO
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
 
 # Konfigurasi halaman
 st.set_page_config(
@@ -132,11 +136,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Data class untuk kendaraan
+@dataclass
+class Vehicle:
+    id: int
+    name: str
+    type: str
+    length: float  # dalam meter
+    width: float   # dalam meter
+    x: float       # posisi x (meter dari kiri)
+    y: float       # posisi y (meter dari depan)
+    color: str
+    icon: str
+
 # Inisialisasi state session
 if 'ship_layout' not in st.session_state:
     st.session_state.ship_layout = {
-        'length': 15.0,    # meter (sesuai gambar: 15m)
-        'width': 10.0      # meter (sesuai gambar: 10m)
+        'length': 50,    # meter
+        'width': 15      # meter
     }
 
 if 'vehicles' not in st.session_state:
@@ -148,20 +165,12 @@ if 'next_vehicle_id' not in st.session_state:
 if 'selected_vehicle' not in st.session_state:
     st.session_state.selected_vehicle = None
 
-# Warna untuk kendaraan sesuai gambar
+# Warna untuk kendaraan
 vehicle_colors = [
-    '#FF0000',  # Red
-    '#0000FF',  # Blue
-    '#00FF00',  # Green
-    '#FFFF00',  # Yellow
-    '#FFA500',  # Orange
-    '#800080',  # Purple
-    '#FF1493',  # Deep Pink
-    '#00FFFF',  # Cyan
-    '#FF4500',  # Orange Red
-    '#9400D3',  # Dark Violet
-    '#008000',  # Green
-    '#FF69B4'   # Hot Pink
+    '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', 
+    '#118AB2', '#EF476F', '#7209B7', '#073B4C',
+    '#F72585', '#3A86FF', '#FB5607', '#8338EC',
+    '#3A86FF', '#FF006E', '#FFBE0B', '#FB5607'
 ]
 
 # Ikon untuk tipe kendaraan
@@ -243,8 +252,8 @@ def add_vehicle(name, length, width, vehicle_type="custom", icon="🚙"):
         'type': vehicle_type,
         'length': length,
         'width': width,
-        'x': 0,
-        'y': 0,
+        'x': 0,  # posisi awal dalam meter
+        'y': 0,  # posisi awal dalam meter
         'color': get_random_color(),
         'icon': icon
     }
@@ -289,104 +298,57 @@ def calculate_statistics():
         'used_area': used_area,
         'usage_percentage': usage_percentage,
         'vehicle_count': len(st.session_state.vehicles),
-        'vehicle_types': vehicle_types
+        'vehicle_types': vehicle_types,
     }
 
-# FUNGSI UTAMA: Membuat visualisasi seperti gambar
-def create_ship_visualization_like_image():
+# Fungsi untuk membuat diagram sederhana dengan titik grid
+def create_grid_diagram():
+    """Membuat diagram grid dengan titik-titik dan kendaraan"""
     ship_layout = st.session_state.ship_layout
     vehicles = st.session_state.vehicles
     
-    # Buat figure dengan orientasi seperti gambar
+    # Buat grid titik
+    grid_size = 0.5  # meter
+    x = np.arange(0, ship_layout['width'] + grid_size, grid_size)
+    y = np.arange(0, ship_layout['length'] + grid_size, grid_size)
+    
+    X, Y = np.meshgrid(x, y)
+    
+    # Buat figure
     fig = go.Figure()
     
-    # Tambahkan background kapal
-    fig.add_shape(
-        type="rect",
-        x0=0, y0=0,
-        x1=ship_layout['width'], 
-        y1=ship_layout['length'],
-        fillcolor='white',
-        line=dict(color='black', width=2),
-        layer='below'
-    )
+    # Tambahkan titik grid
+    fig.add_trace(go.Scatter(
+        x=X.flatten(),
+        y=Y.flatten(),
+        mode='markers',
+        marker=dict(
+            size=4,
+            color='lightgray',
+            symbol='circle',
+            opacity=0.5
+        ),
+        name='Grid Points',
+        showlegend=False
+    ))
     
-    # Tambahkan grid lines sesuai gambar
-    # Horizontal lines (untuk panjang)
-    for y in np.arange(0, ship_layout['length'] + 1, 2):
-        fig.add_shape(
-            type="line",
-            x0=0, y0=y, x1=ship_layout['width'], y1=y,
-            line=dict(color="lightgray", width=1),
-            layer='below'
-        )
+    # Outline kapal
+    ship_x = [0, ship_layout['width'], ship_layout['width'], 0, 0]
+    ship_y = [0, 0, ship_layout['length'], ship_layout['length'], 0]
     
-    # Vertical lines (untuk lebar)
-    for x in np.arange(0, ship_layout['width'] + 1, 2):
-        fig.add_shape(
-            type="line",
-            x0=x, y0=0, x1=x, y1=ship_layout['length'],
-            line=dict(color="lightgray", width=1),
-            layer='below'
-        )
+    fig.add_trace(go.Scatter(
+        x=ship_x,
+        y=ship_y,
+        mode='lines',
+        line=dict(color='blue', width=3),
+        fill='toself',
+        fillcolor='rgba(135, 206, 235, 0.1)',
+        name='Kapal'
+    ))
     
-    # Tambahkan teks untuk sumbu Y (Panjang) di kiri
-    # Sumbu Y: 14, 12, 10, 8, 6, 4, 2 (dari atas ke bawah)
-    y_labels = [14, 12, 10, 8, 6, 4, 2]
-    for label in y_labels:
-        if label <= ship_layout['length']:
-            fig.add_annotation(
-                x=-0.5,
-                y=label,
-                text=str(label),
-                showarrow=False,
-                font=dict(size=12, color="black"),
-                xref="x",
-                yref="y",
-                xanchor="right"
-            )
-    
-    # Tambahkan teks untuk sumbu X (Lebar) di bawah
-    # Sumbu X: 0, 2, 4, 6, 8, 10
-    x_labels = [0, 2, 4, 6, 8, 10]
-    for label in x_labels:
-        if label <= ship_layout['width']:
-            fig.add_annotation(
-                x=label,
-                y=-0.5,
-                text=str(label),
-                showarrow=False,
-                font=dict(size=12, color="black"),
-                xref="x",
-                yref="y",
-                yanchor="top"
-            )
-    
-    # Tambahkan label sumbu
-    fig.add_annotation(
-        x=-1.5,
-        y=ship_layout['length']/2,
-        text="Panjang (meter)",
-        showarrow=False,
-        font=dict(size=14, color="black"),
-        textangle=-90,
-        xref="x",
-        yref="y"
-    )
-    
-    fig.add_annotation(
-        x=ship_layout['width']/2,
-        y=-1.5,
-        text="Lebar (meter)",
-        showarrow=False,
-        font=dict(size=14, color="black"),
-        xref="x",
-        yref="y"
-    )
-    
-    # Tambahkan kendaraan sebagai persegi panjang
+    # Tambahkan kendaraan
     for vehicle in vehicles:
-        # Koordinat empat titik persegi panjang
+        # Hitung posisi dalam grid
         x0 = vehicle['x']
         y0 = vehicle['y']
         x1 = vehicle['x'] + vehicle['width']
@@ -396,104 +358,50 @@ def create_ship_visualization_like_image():
         fig.add_trace(go.Scatter(
             x=[x0, x1, x1, x0, x0],
             y=[y0, y0, y1, y1, y0],
-            mode='lines',
+            mode='lines+markers',
             fill='toself',
             fillcolor=vehicle['color'],
             line=dict(color=darken_color(vehicle['color'], 30), width=2),
+            marker=dict(size=0),  # Tidak menampilkan marker di sudut
             name=vehicle['name'],
-            text=f"{vehicle['name']}<br>{vehicle['length']}m × {vehicle['width']}m<br>Luas: {vehicle['length']*vehicle['width']:.1f} m²",
-            hoverinfo='text',
-            showlegend=False
+            text=f"{vehicle['name']}<br>{vehicle['length']}m × {vehicle['width']}m",
+            hoverinfo='text'
         ))
         
-        # Tambahkan ikon di tengah kendaraan
+        # Tambahkan titik di tengah dengan ikon
         center_x = (x0 + x1) / 2
         center_y = (y0 + y1) / 2
         
         fig.add_trace(go.Scatter(
             x=[center_x],
             y=[center_y],
-            mode='text',
+            mode='markers+text',
+            marker=dict(size=0),
             text=[vehicle['icon']],
-            textfont=dict(size=14, color='white'),
-            showlegend=False,
-            hoverinfo='none'
-        ))
-        
-        # Tambahkan ID kendaraan jika cukup besar
-        if vehicle['length'] > 2 and vehicle['width'] > 1:
-            fig.add_annotation(
-                x=center_x,
-                y=center_y - 0.5,
-                text=f"ID: {vehicle['id']}",
-                showarrow=False,
-                font=dict(size=10, color='white'),
-                bgcolor='rgba(0,0,0,0.5)',
-                bordercolor='white',
-                borderwidth=1,
-                borderpad=2
-            )
-    
-    # Highlight kendaraan yang dipilih
-    if st.session_state.selected_vehicle:
-        vehicle = st.session_state.selected_vehicle
-        x0 = vehicle['x']
-        y0 = vehicle['y']
-        x1 = vehicle['x'] + vehicle['width']
-        y1 = vehicle['y'] + vehicle['length']
-        
-        # Border highlight
-        fig.add_trace(go.Scatter(
-            x=[x0, x1, x1, x0, x0],
-            y=[y0, y0, y1, y1, y0],
-            mode='lines',
-            line=dict(color='yellow', width=4),
-            name='Selected',
-            showlegend=False,
-            hoverinfo='none'
-        ))
-        
-        # Tambahkan titik di pojok
-        fig.add_trace(go.Scatter(
-            x=[x0, x1, x1, x0],
-            y=[y0, y0, y1, y1],
-            mode='markers',
-            marker=dict(color='yellow', size=10),
-            showlegend=False,
-            hoverinfo='none'
+            textfont=dict(size=20),
+            showlegend=False
         ))
     
-    # Konfigurasi layout sesuai gambar
+    # Konfigurasi layout
     fig.update_layout(
-        title=f"Layout Kapal Ro-Ro - {ship_layout['length']}m × {ship_layout['width']}m",
-        width=700,
-        height=700,
+        title="Diagram Grid Kapal (Skala Sebenarnya)",
+        xaxis_title="Lebar (meter)",
+        yaxis_title="Panjang (meter)",
+        width=800,
+        height=600,
         xaxis=dict(
-            range=[-2, ship_layout['width'] + 1],
-            showgrid=False,
-            zeroline=False,
-            showticklabels=False,
-            showline=False
+            scaleanchor="y",
+            scaleratio=1,
+            constrain='domain'
         ),
         yaxis=dict(
-            range=[-2, ship_layout['length'] + 1],
-            showgrid=False,
-            zeroline=False,
-            showticklabels=False,
-            showline=False,
             scaleanchor="x",
-            scaleratio=1
+            scaleratio=1,
+            constrain='domain'
         ),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        showlegend=False,
-        margin=dict(l=50, r=20, t=50, b=50),
-        hovermode='closest'
+        plot_bgcolor='white',
+        showlegend=False
     )
-    
-    # Tambahkan grid area di belakang
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
     
     return fig
 
@@ -502,7 +410,7 @@ def export_layout():
     export_data = {
         'ship_layout': st.session_state.ship_layout,
         'vehicles': st.session_state.vehicles,
-        'next_vehicle_id': st.session_state.next_vehicle_id
+        'next_vehicle_id': st.session_state.next_vehicle_id,
     }
     return json.dumps(export_data, indent=2)
 
@@ -519,7 +427,27 @@ def import_layout(json_str):
 
 # UI Header
 st.markdown('<h1 class="main-header">🚢 Ro-Ro Layout Planner</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Atur layout kapal Ro-Ro dengan diagram grid</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Atur layout kapal Ro-Ro dengan diagram kartesius skala 1:1</p>', unsafe_allow_html=True)
+
+# Panel informasi
+st.markdown("### 📐 Informasi Skala 1:1")
+with st.expander("Klik untuk melihat penjelasan skala"):
+    ship_layout = st.session_state.ship_layout
+    
+    col_scale1, col_scale2 = st.columns(2)
+    with col_scale1:
+        st.metric("Ukuran Kapal", f"{ship_layout['length']}m × {ship_layout['width']}m")
+    with col_scale2:
+        st.metric("Luas Kapal", f"{ship_layout['length'] * ship_layout['width']:.1f} m²")
+    
+    st.info(f"""
+    **Diagram Kartesius Skala 1:1:**
+    - **Sumbu X**: Lebar kapal (0 sampai {ship_layout['width']} meter)
+    - **Sumbu Y**: Panjang kapal (0 sampai {ship_layout['length']} meter)
+    - **Setiap titik grid**: Berjarak 0.5 meter
+    - **Ukuran kendaraan**: Ditampilkan sesuai ukuran sebenarnya
+    - **Skala**: 1 pixel = 1 meter (proporsional)
+    """)
 
 # Layout utama
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -527,10 +455,10 @@ col1, col2, col3 = st.columns([1, 2, 1])
 with col1:
     st.markdown("### ⚙️ Kontrol Layout Kapal")
     
-    # Input ukuran kapal sesuai gambar
+    # Input ukuran kapal (tanpa jumlah lajur)
     ship_length = st.number_input(
         "Panjang Kapal (meter):", 
-        min_value=5.0, max_value=200.0, value=float(st.session_state.ship_layout['length']), 
+        min_value=10.0, max_value=200.0, value=float(st.session_state.ship_layout['length']), 
         step=0.5, key="ship_length_input", format="%.1f"
     )
     
@@ -540,7 +468,7 @@ with col1:
         step=0.5, key="ship_width_input", format="%.1f"
     )
     
-    # Hanya tombol update layout
+    # Update layout kapal (tanpa jumlah lajur)
     if st.button("🔄 Update Layout Kapal", use_container_width=True):
         st.session_state.ship_layout = {
             'length': float(ship_length),
@@ -565,7 +493,7 @@ with col1:
     st.markdown("### 🚗 Kendaraan Tersedia")
     st.markdown("Pilih kendaraan untuk ditambahkan:")
     
-    # Kendaraan default sesuai gambar
+    # Kendaraan default dengan ukuran sebenarnya
     col_veh1, col_veh2 = st.columns(2)
     
     with col_veh1:
@@ -575,17 +503,17 @@ with col1:
             add_vehicle("Motor", 2.0, 0.8, "motor", "🏍️")
             st.rerun()
         
-        if st.button(f"🚗 Mobil\n4.5m × 1.8m", 
+        if st.button(f"🚗 Mobil Sedang\n5.0m × 2.0m", 
                     use_container_width=True, 
-                    help="Mobil: Panjang 4.5m, Lebar 1.8m"):
-            add_vehicle("Mobil Kecil", 4.5, 1.8, "car", "🚗")
+                    help="Mobil Sedang: Panjang 5.0m, Lebar 2.0m"):
+            add_vehicle("Mobil Sedang", 5.0, 2.0, "car", "🚗")
             st.rerun()
     
     with col_veh2:
-        if st.button(f"🚙 SUV\n5.0m × 2.0m", 
+        if st.button(f"🚙 Mobil Kecil\n4.5m × 1.8m", 
                     use_container_width=True, 
-                    help="SUV: Panjang 5.0m, Lebar 2.0m"):
-            add_vehicle("SUV", 5.0, 2.0, "car", "🚙")
+                    help="Mobil Kecil: Panjang 4.5m, Lebar 1.8m"):
+            add_vehicle("Mobil Kecil", 4.5, 1.8, "car", "🚙")
             st.rerun()
         
         if st.button(f"🚚 Truk\n10.0m × 2.5m", 
@@ -593,6 +521,12 @@ with col1:
                     help="Truk: Panjang 10.0m, Lebar 2.5m"):
             add_vehicle("Truk", 10.0, 2.5, "truck", "🚚")
             st.rerun()
+    
+    if st.button(f"🚌 Bus\n12.0m × 2.5m", 
+                use_container_width=True, 
+                help="Bus: Panjang 12.0m, Lebar 2.5m"):
+        add_vehicle("Bus", 12.0, 2.5, "bus", "🚌")
+        st.rerun()
     
     st.divider()
     
@@ -602,9 +536,9 @@ with col1:
     
     col_custom_size1, col_custom_size2 = st.columns(2)
     with col_custom_size1:
-        custom_length = st.number_input("Panjang (m):", min_value=0.5, max_value=30.0, value=4.5, step=0.1, format="%.1f")
+        custom_length = st.number_input("Panjang (m):", min_value=0.5, max_value=30.0, value=6.0, step=0.1, format="%.1f")
     with col_custom_size2:
-        custom_width = st.number_input("Lebar (m):", min_value=0.5, max_value=10.0, value=1.8, step=0.1, format="%.1f")
+        custom_width = st.number_input("Lebar (m):", min_value=0.5, max_value=10.0, value=2.0, step=0.1, format="%.1f")
     
     col_custom1, col_custom2 = st.columns(2)
     with col_custom1:
@@ -617,16 +551,19 @@ with col1:
         st.rerun()
 
 with col2:
-    st.markdown("### 🗺️ Diagram Grid Kapal")
+    st.markdown("### 🗺️ Layout Kapal (Diagram Grid Skala 1:1)")
     
-    # Visualisasi kapal seperti gambar
-    fig = create_ship_visualization_like_image()
+    # Hanya tampilkan diagram grid sederhana
+    fig = create_grid_diagram()
     st.plotly_chart(fig, use_container_width=True)
     
     # Statistik kapal
     stats = calculate_statistics()
     
-    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+    # Meter kapasitas kendaraan
+    st.markdown(f"**Jumlah Kendaraan:** {len(st.session_state.vehicles)}")
+    
+    col_stat1, col_stat2, col_stat3 = st.columns(3)
     
     with col_stat1:
         st.metric("Jumlah Kendaraan", stats['vehicle_count'])
@@ -635,14 +572,39 @@ with col2:
         st.metric("Luas Terpakai", f"{stats['used_area']:.1f} m²")
     
     with col_stat3:
-        st.metric("Penggunaan", f"{stats['usage_percentage']:.1f}%")
+        st.metric("Penggunaan Kapal", f"{stats['usage_percentage']:.1f}%")
     
-    with col_stat4:
-        free_area = stats['ship_area'] - stats['used_area']
-        st.metric("Sisa Luas", f"{free_area:.1f} m²")
+    # Informasi posisi
+    with st.expander("📍 Informasi Koordinat"):
+        ship_layout = st.session_state.ship_layout
+        st.write(f"**Sistem Koordinat:**")
+        st.write(f"- Titik (0, 0): Pojok kiri depan kapal")
+        st.write(f"- Titik ({ship_layout['width']}, 0): Pojok kanan depan kapal")
+        st.write(f"- Titik (0, {ship_layout['length']}): Pojok kiri belakang kapal")
+        st.write(f"- Titik ({ship_layout['width']}, {ship_layout['length']}): Pojok kanan belakang kapal")
+        
+        if st.session_state.vehicles:
+            st.write("**Koordinat Kendaraan:**")
+            for vehicle in st.session_state.vehicles:
+                st.code(f"{vehicle['name']}: ({vehicle['x']:.1f}, {vehicle['y']:.1f}) - ({vehicle['x']+vehicle['width']:.1f}, {vehicle['y']+vehicle['length']:.1f})")
     
-    # Kontrol kendaraan
-    st.markdown("### 🎮 Kontrol Kendaraan")
+    # Statistik per tipe kendaraan
+    if stats['vehicle_types']:
+        st.markdown("### 📈 Distribusi Kendaraan")
+        type_data = pd.DataFrame({
+            'Tipe': list(stats['vehicle_types'].keys()),
+            'Jumlah': list(stats['vehicle_types'].values())
+        })
+        
+        # Tampilkan chart kecil
+        col_chart1, col_chart2 = st.columns([2, 1])
+        with col_chart1:
+            st.bar_chart(type_data.set_index('Tipe'))
+        with col_chart2:
+            st.dataframe(type_data, use_container_width=True, hide_index=True)
+    
+    # Kontrol kendaraan dengan input koordinat
+    st.markdown("### 🎮 Kontrol Kendaraan (Koordinat)")
     
     if st.session_state.vehicles:
         # Pilih kendaraan untuk dikontrol
@@ -706,7 +668,7 @@ with col2:
         st.markdown("**Kontrol Arah:**")
         col_move1, col_move2, col_move3 = st.columns(3)
         
-        move_step = st.slider("Langkah (meter):", 0.1, 2.0, 0.5, 0.1)
+        move_step = st.slider("Langkah pergerakan (meter):", 0.1, 2.0, 0.5, 0.1)
         
         with col_move1:
             if st.button("⬆️ Maju", use_container_width=True):
@@ -735,7 +697,7 @@ with col2:
                     selected_vehicle['y'] += move_step
                 st.rerun()
         
-        # Tombol hapus
+        # Tombol aksi (tanpa duplikat kendaraan)
         if st.button("🗑️ Hapus Kendaraan", type="secondary", use_container_width=True):
             remove_vehicle(selected_vehicle_id)
             st.success("Kendaraan berhasil dihapus!")
@@ -745,7 +707,7 @@ with col2:
         st.info("Belum ada kendaraan di kapal. Tambahkan kendaraan dari panel kiri.")
 
 with col3:
-    st.markdown("### 📊 Detail Kendaraan")
+    st.markdown("### 📊 Detail Kendaraan (Koordinat)")
     
     if st.session_state.selected_vehicle:
         vehicle = st.session_state.selected_vehicle
@@ -769,7 +731,7 @@ with col3:
         </div>
         """, unsafe_allow_html=True)
         
-        # Edit kendaraan sesuai gambar
+        # Edit kendaraan
         st.markdown("---")
         st.markdown("### ✏️ Edit Kendaraan")
         
@@ -871,36 +833,38 @@ with col3:
 
 # Footer dengan instruksi
 st.divider()
-st.markdown("### 📖 Cara Menggunakan:")
+st.markdown("### 📖 Cara Menggunakan (Diagram Kartesius):")
 st.markdown("""
-1. **Atur ukuran kapal** di panel kiri (default: 15m × 10m sesuai gambar)
-2. **Tambahkan kendaraan** dengan menekan tombol kendaraan yang tersedia atau buat kendaraan kustom
-3. **Atur posisi kendaraan** dengan:
-   - Input koordinat manual (X, Y dalam meter)
-   - Tombol arah dengan langkah yang dapat disesuaikan
-4. **Pantau statistik** penggunaan ruang di kapal
-5. **Edit kendaraan** untuk mengubah ukuran atau nama
-6. **Ekspor/Impor layout** untuk menyimpan atau memuat konfigurasi
+1. **Diagram Kartesius Skala 1:1**: 
+   - Sumbu X = Lebar kapal (meter dari kiri)
+   - Sumbu Y = Panjang kapal (meter dari depan)
+   - Setiap titik = posisi yang mungkin untuk penempatan kendaraan
 
-**Ukuran Standar Kendaraan:**
-- Motor: 2.0m × 0.8m
-- Mobil: 4.5m × 1.8m (sesuai gambar: "Mobil Kecil")
-- SUV: 5.0m × 2.0m
-- Truk: 10.0m × 2.5m
+2. **Ukuran Sebenarnya**:
+   - Kendaraan ditampilkan dengan ukuran sebenarnya (dalam meter)
+   - Motor: 2.0m × 0.8m
+   - Mobil Kecil: 4.5m × 1.8m
+   - Mobil Sedang: 5.0m × 2.0m
+   - Truk: 10.0m × 2.5m
+   - Bus: 12.0m × 2.5m
 
-**Tips:**
-- Sistem otomatis mencegah tabrakan antar kendaraan
-- Setiap kendaraan memiliki warna unik untuk identifikasi
-- Grid 2m × 2m untuk referensi posisi
-- Koordinat ditampilkan dalam meter (skala sebenarnya)
+3. **Kontrol Presisi**:
+   - Atur posisi dengan input koordinat (X, Y) dalam meter
+   - Gunakan tombol arah dengan langkah yang dapat disesuaikan
+   - Sistem otomatis mencegah tabrakan
+
+4. **Visualisasi**:
+   - Titik-titik grid untuk referensi posisi
+   - Garis bantu untuk lajur kapal
+   - Skala proporsional 1:1 antara gambar dan ukuran sebenarnya
 """)
 
 # Menampilkan data kendaraan dalam tabel
 if st.session_state.vehicles:
     st.divider()
-    st.markdown("### 📋 Daftar Kendaraan di Kapal")
+    st.markdown("### 📋 Daftar Kendaraan di Kapal (Koordinat)")
     
-    # Buat dataframe untuk tabel
+    # Buat dataframe untuk tabel dengan koordinat
     vehicles_data = []
     for vehicle in st.session_state.vehicles:
         vehicles_data.append({
@@ -928,3 +892,18 @@ if st.session_state.vehicles:
                 column_config={
                     "Warna": st.column_config.TextColumn(disabled=True)
                 })
+    
+    # Ringkasan
+    total_area = sum(v['length'] * v['width'] for v in st.session_state.vehicles)
+    ship_area = st.session_state.ship_layout['length'] * st.session_state.ship_layout['width']
+    
+    st.markdown(f"""
+    **Ringkasan:**
+    - **Total Kendaraan:** {len(st.session_state.vehicles)}
+    - **Total Luas Terpakai:** {total_area:.1f} m² dari {ship_area:.1f} m² ({total_area/ship_area*100:.1f}%)
+    - **Motor:** {stats['vehicle_types'].get('motor', 0)} unit
+    - **Mobil:** {stats['vehicle_types'].get('car', 0)} unit
+    - **Truk:** {stats['vehicle_types'].get('truck', 0)} unit
+    - **Bus:** {stats['vehicle_types'].get('bus', 0)} unit
+    - **Kustom:** {stats['vehicle_types'].get('custom', 0)} unit
+    """)
