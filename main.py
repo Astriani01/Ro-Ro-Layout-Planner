@@ -280,8 +280,8 @@ def calculate_statistics():
         'capacity_percentage': (len(st.session_state.vehicles) / st.session_state.max_vehicles) * 100
     }
 
-# FUNGSI UTAMA: Membuat visualisasi kapal sederhana
-def create_ship_visualization():
+# FUNGSI UTAMA: Membuat visualisasi kapal dengan titik-titik
+def create_ship_dots_visualization():
     ship_layout = st.session_state.ship_layout
     vehicles = st.session_state.vehicles
     
@@ -294,18 +294,18 @@ def create_ship_visualization():
         x0=0, y0=0,
         x1=ship_layout['width'], 
         y1=ship_layout['length'],
-        fillcolor='#e6f7ff',
+        fillcolor='#f8f9fa',
         line=dict(color='#1a2980', width=3),
         layer='below'
     )
     
-    # Tambahkan grid lines sederhana
+    # Tambahkan grid lines
     grid_size = 5  # meter
     for x in np.arange(0, ship_layout['width'] + grid_size, grid_size):
         fig.add_shape(
             type="line",
             x0=x, y0=0, x1=x, y1=ship_layout['length'],
-            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dot"),
+            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dash"),
             layer='below'
         )
     
@@ -313,42 +313,96 @@ def create_ship_visualization():
         fig.add_shape(
             type="line",
             x0=0, y0=y, x1=ship_layout['width'], y1=y,
-            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dot"),
+            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dash"),
             layer='below'
         )
     
-    # Tambahkan kendaraan
+    # Tambahkan titik-titik untuk setiap kendaraan
+    all_dots_x = []
+    all_dots_y = []
+    all_dots_color = []
+    all_dots_text = []
+    all_dots_size = []
+    
     for vehicle in vehicles:
-        # Koordinat empat titik persegi panjang
-        x0 = vehicle['x']
-        y0 = vehicle['y']
-        x1 = vehicle['x'] + vehicle['width']
-        y1 = vehicle['y'] + vehicle['length']
+        # Generate titik-titik dalam area kendaraan
+        num_points = max(5, int(vehicle['length'] * vehicle['width'] * 0.5))  # Lebih banyak titik untuk area yang lebih besar
         
-        # Persegi panjang kendaraan
+        # Titik acak dalam area kendaraan
+        dots_x = []
+        dots_y = []
+        
+        # Buat pola titik yang lebih terstruktur
+        # Gunakan grid kecil dalam area kendaraan
+        dot_spacing = min(0.5, max(0.2, min(vehicle['length'], vehicle['width']) / 5))
+        
+        # Titik-titik grid
+        for i in np.arange(0, vehicle['length'], dot_spacing):
+            for j in np.arange(0, vehicle['width'], dot_spacing):
+                # Tambahkan sedikit variasi acak
+                x_pos = vehicle['x'] + j + random.uniform(-0.05, 0.05)
+                y_pos = vehicle['y'] + i + random.uniform(-0.05, 0.05)
+                
+                # Pastikan titik berada dalam area kendaraan
+                if (vehicle['x'] <= x_pos <= vehicle['x'] + vehicle['width'] and 
+                    vehicle['y'] <= y_pos <= vehicle['y'] + vehicle['length']):
+                    dots_x.append(x_pos)
+                    dots_y.append(y_pos)
+        
+        # Jika terlalu sedikit titik, tambahkan lebih banyak
+        if len(dots_x) < 5:
+            for _ in range(10):
+                dots_x.append(vehicle['x'] + random.uniform(0, vehicle['width']))
+                dots_y.append(vehicle['y'] + random.uniform(0, vehicle['length']))
+        
+        all_dots_x.extend(dots_x)
+        all_dots_y.extend(dots_y)
+        all_dots_color.extend([vehicle['color']] * len(dots_x))
+        
+        # Ukuran titik berdasarkan ukuran kendaraan
+        base_size = max(5, min(15, (vehicle['length'] * vehicle['width']) ** 0.5 * 3))
+        all_dots_size.extend([base_size] * len(dots_x))
+        
+        # Teks hover
+        vehicle_text = f"{vehicle['name']}<br>{vehicle['length']}m × {vehicle['width']}m"
+        all_dots_text.extend([vehicle_text] * len(dots_x))
+    
+    # Tambahkan semua titik ke plot
+    if all_dots_x:
         fig.add_trace(go.Scatter(
-            x=[x0, x1, x1, x0, x0],
-            y=[y0, y0, y1, y1, y0],
-            mode='lines',
-            fill='toself',
-            fillcolor=vehicle['color'],
-            line=dict(color=darken_color(vehicle['color'], 30), width=2),
-            name=vehicle['name'],
-            text=f"{vehicle['name']}<br>{vehicle['length']}m × {vehicle['width']}m",
+            x=all_dots_x,
+            y=all_dots_y,
+            mode='markers',
+            marker=dict(
+                color=all_dots_color,
+                size=all_dots_size,
+                line=dict(width=1, color='white')
+            ),
+            text=all_dots_text,
             hoverinfo='text',
+            name='Kendaraan',
             showlegend=False
         ))
+    
+    # Tambahkan titik pusat untuk setiap kendaraan dengan ikon
+    for vehicle in vehicles:
+        center_x = vehicle['x'] + vehicle['width'] / 2
+        center_y = vehicle['y'] + vehicle['length'] / 2
         
-        # Tambahkan ikon di tengah
-        center_x = (x0 + x1) / 2
-        center_y = (y0 + y1) / 2
-        
+        # Titik pusat yang lebih besar
         fig.add_trace(go.Scatter(
             x=[center_x],
             y=[center_y],
-            mode='text',
+            mode='markers+text',
+            marker=dict(
+                color=darken_color(vehicle['color'], 30),
+                size=30,
+                symbol='circle',
+                line=dict(width=2, color='white')
+            ),
             text=[vehicle['icon']],
-            textfont=dict(size=16, color='white'),
+            textfont=dict(size=14, color='white'),
+            textposition='middle center',
             showlegend=False,
             hoverinfo='none'
         ))
@@ -356,41 +410,60 @@ def create_ship_visualization():
     # Highlight kendaraan yang dipilih
     if st.session_state.selected_vehicle:
         vehicle = st.session_state.selected_vehicle
+        
+        # Garis outline untuk kendaraan yang dipilih
         x0 = vehicle['x']
         y0 = vehicle['y']
         x1 = vehicle['x'] + vehicle['width']
         y1 = vehicle['y'] + vehicle['length']
         
-        # Border highlight
         fig.add_trace(go.Scatter(
             x=[x0, x1, x1, x0, x0],
             y=[y0, y0, y1, y1, y0],
             mode='lines',
-            line=dict(color='yellow', width=4),
+            line=dict(color='yellow', width=4, dash='dash'),
+            fill='none',
+            showlegend=False,
+            hoverinfo='none'
+        ))
+        
+        # Titik tambahan untuk highlight
+        fig.add_trace(go.Scatter(
+            x=[vehicle['x'] + vehicle['width']/2],
+            y=[vehicle['y'] + vehicle['length']/2],
+            mode='markers',
+            marker=dict(
+                color='yellow',
+                size=40,
+                symbol='circle-open',
+                line=dict(width=3, color='yellow')
+            ),
             showlegend=False,
             hoverinfo='none'
         ))
     
     # Konfigurasi layout
     fig.update_layout(
-        title=f"Layout Kapal ({ship_layout['length']}m × {ship_layout['width']}m)",
+        title=f"Layout Kapal - Visualisasi Titik ({ship_layout['length']}m × {ship_layout['width']}m)",
         xaxis_title="Lebar Kapal (meter)",
         yaxis_title="Panjang Kapal (meter)",
         width=800,
         height=500,
         xaxis=dict(
             range=[-1, ship_layout['width'] + 1],
-            gridcolor="rgba(0,0,0,0.1)",
+            gridcolor="rgba(0,0,0,0.2)",
             showgrid=True,
             dtick=5,
-            tick0=0
+            tick0=0,
+            tickfont=dict(size=12)
         ),
         yaxis=dict(
             range=[-1, ship_layout['length'] + 1],
-            gridcolor="rgba(0,0,0,0.1)",
+            gridcolor="rgba(0,0,0,0.2)",
             showgrid=True,
             dtick=5,
-            tick0=0
+            tick0=0,
+            tickfont=dict(size=12)
         ),
         plot_bgcolor="white",
         paper_bgcolor="white",
@@ -457,6 +530,22 @@ with col1:
     max_vehicles = st.number_input(
         "Maksimum Jumlah Kendaraan:", 
         min_value=1, max_value=100, value=st.session_state.max_vehicles, key="max_vehicles_input"
+    )
+    
+    # Tambahkan pengaturan visualisasi
+    st.markdown("---")
+    st.markdown("### 🎨 Pengaturan Visualisasi")
+    
+    dot_density = st.slider(
+        "Kepadatan Titik:", 
+        min_value=1, max_value=10, value=5,
+        help="Mengatur seberapa padat titik-titik dalam visualisasi"
+    )
+    
+    dot_size = st.slider(
+        "Ukuran Titik:", 
+        min_value=3, max_value=15, value=8,
+        help="Mengatur ukuran titik-titik dalam visualisasi"
     )
     
     if st.button("🔄 Update Layout Kapal", use_container_width=True):
@@ -538,10 +627,10 @@ with col1:
         st.rerun()
 
 with col2:
-    st.markdown("### 🗺️ Layout Kapal")
+    st.markdown("### 🗺️ Layout Kapal - Visualisasi Titik")
     
-    # Visualisasi kapal
-    fig = create_ship_visualization()
+    # Visualisasi kapal dengan titik-titik
+    fig = create_ship_dots_visualization()
     st.plotly_chart(fig, use_container_width=True)
     
     # Statistik kapal
@@ -571,16 +660,24 @@ with col2:
         free_area = stats['ship_area'] - stats['used_area']
         st.metric("Sisa Luas", f"{free_area:.1f} m²")
     
-    # Informasi ukuran
-    with st.expander("📏 Informasi Ukuran"):
-        ship_layout = st.session_state.ship_layout
-        st.write(f"**Ukuran Kapal:** {ship_layout['length']}m × {ship_layout['width']}m")
-        st.write(f"**Luas Kapal:** {ship_layout['length'] * ship_layout['width']:.1f} m²")
+    # Informasi visualisasi
+    with st.expander("ℹ️ Informasi Visualisasi Titik"):
+        st.write("**Visualisasi Titik:**")
+        st.write("- Setiap titik mewakili area kendaraan")
+        st.write("- Titik-titik dengan warna sama = satu kendaraan")
+        st.write("- Titik besar di tengah = pusat kendaraan dengan ikon")
+        st.write("- Area kuning = kendaraan yang sedang dipilih")
+        st.write("- Grid garis putus-putus = pembagi 5 meter")
         
         if st.session_state.vehicles:
-            st.write("**Ukuran Kendaraan:**")
-            for vehicle in st.session_state.vehicles:
-                st.write(f"- {vehicle['name']}: {vehicle['length']}m × {vehicle['width']}m = {vehicle['length'] * vehicle['width']:.1f} m²")
+            st.write("**Legenda Warna:**")
+            for vehicle in st.session_state.vehicles[:6]:  # Tampilkan maksimal 6 warna
+                st.markdown(f"""
+                <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                    <div class="vehicle-color-box" style="background-color: {vehicle['color']};"></div>
+                    <span>{vehicle['name']} ({vehicle['icon']})</span>
+                </div>
+                """, unsafe_allow_html=True)
     
     # Statistik per tipe kendaraan
     if stats['vehicle_types']:
@@ -823,29 +920,27 @@ with col3:
 
 # Footer dengan instruksi
 st.divider()
-st.markdown("### 📖 Cara Menggunakan:")
+st.markdown("### 📖 Cara Menggunakan Visualisasi Titik:")
 st.markdown("""
-1. **Atur ukuran kapal** di panel kiri (panjang dan lebar dalam meter)
-2. **Tambahkan kendaraan** dengan menekan tombol kendaraan yang tersedia atau buat kendaraan kustom
-3. **Atur posisi kendaraan** dengan:
-   - Input koordinat manual (X, Y dalam meter)
-   - Tombol arah dengan langkah yang dapat disesuaikan
-4. **Pantau statistik** penggunaan ruang di kapal
-5. **Edit kendaraan** untuk mengubah ukuran atau nama
-6. **Ekspor/Impor layout** untuk menyimpan atau memuat konfigurasi
-7. **Gunakan alat tambahan** untuk mengatur ulang atau menghapus semua kendaraan
+1. **Setiap titik mewakili area** dalam kendaraan
+2. **Warna titik menunjukkan kendaraan** yang berbeda
+3. **Titik besar di tengah** dengan ikon = pusat kendaraan
+4. **Grid garis putus-putus** = pembagi setiap 5 meter
+5. **Area kuning** = kendaraan yang sedang dipilih
+6. **Skala proporsional** dengan ukuran sebenarnya
 
-**Ukuran Standar Kendaraan:**
-- Motor: 2.0m × 0.8m
-- Mobil Kecil: 4.5m × 1.8m
-- Mobil Sedang: 5.0m × 2.0m
-- Truk: 10.0m × 2.5m
-- Bus: 12.0m × 2.5m
+**Cara Mengatur Layout:**
+1. **Atur ukuran kapal** di panel kiri
+2. **Tambahkan kendaraan** dengan tombol atau kendaraan kustom
+3. **Pilih kendaraan** untuk mengontrolnya
+4. **Atur posisi** dengan koordinat manual atau tombol arah
+5. **Pantau statistik** penggunaan ruang
 
-**Tips:**
-- Sistem otomatis mencegah tabrakan antar kendaraan
-- Setiap kendaraan memiliki warna unik untuk identifikasi
-- Skala gambar proporsional dengan ukuran sebenarnya
+**Tips Visualisasi Titik:**
+- Titik lebih padat = area kendaraan lebih besar
+- Titik dengan warna sama = kendaraan yang sama
+- Hover pada titik untuk melihat detail kendaraan
+- Kendaraan yang dipilih memiliki outline kuning
 """)
 
 # Menampilkan data kendaraan dalam tabel
