@@ -1,4 +1,4 @@
-# app.py - Aplikasi Layout Kapal Ro-Ro dengan Streamlit
+# app.py - Aplikasi Layout Kapal Ro-Ro Sederhana
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -127,9 +127,8 @@ st.markdown("""
 # Inisialisasi state session
 if 'ship_layout' not in st.session_state:
     st.session_state.ship_layout = {
-        'length': 50,
-        'width': 15,
-        'lanes': 3
+        'length': 50,    # meter
+        'width': 15      # meter
     }
 
 if 'vehicles' not in st.session_state:
@@ -148,8 +147,7 @@ if 'max_vehicles' not in st.session_state:
 vehicle_colors = [
     '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', 
     '#118AB2', '#EF476F', '#7209B7', '#073B4C',
-    '#F72585', '#3A86FF', '#FB5607', '#8338EC',
-    '#3A86FF', '#FF006E', '#FFBE0B', '#FB5607'
+    '#F72585', '#3A86FF', '#FB5607', '#8338EC'
 ]
 
 # Ikon untuk tipe kendaraan
@@ -172,37 +170,39 @@ def darken_color(color, percent):
     rgb = tuple(max(0, min(255, int(c * (100 - percent) / 100))) for c in rgb)
     return '#%02x%02x%02x' % rgb
 
-# Fungsi untuk memeriksa tabrakan kendaraan
+# Fungsi untuk memeriksa tabrakan kendaraan (dalam meter)
 def check_collision(vehicle1, vehicle2):
     x1, y1 = vehicle1['x'], vehicle1['y']
-    w1, h1 = vehicle1['width_cells'], vehicle1['length_cells']
+    w1, h1 = vehicle1['width'], vehicle1['length']
     
     x2, y2 = vehicle2['x'], vehicle2['y']
-    w2, h2 = vehicle2['width_cells'], vehicle2['length_cells']
+    w2, h2 = vehicle2['width'], vehicle2['length']
     
+    # Check if rectangles overlap
     return not (x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1)
 
 # Fungsi untuk memeriksa apakah kendaraan cocok di kapal
 def fits_on_ship(vehicle, ship_layout):
-    max_x = ship_layout['lanes'] - vehicle['width_cells']
-    max_y = 10 - vehicle['length_cells']
-    
-    if vehicle['x'] < 0 or vehicle['x'] > max_x:
+    # Cek apakah kendaraan berada dalam batas kapal
+    if vehicle['x'] < 0 or vehicle['x'] + vehicle['width'] > ship_layout['width']:
         return False
-    if vehicle['y'] < 0 or vehicle['y'] > max_y:
+    if vehicle['y'] < 0 or vehicle['y'] + vehicle['length'] > ship_layout['length']:
         return False
-    
     return True
 
 # Fungsi untuk menemukan posisi kosong untuk kendaraan
-def find_empty_position(vehicle, ship_layout, existing_vehicles):
-    max_x = ship_layout['lanes'] - vehicle['width_cells']
-    max_y = 10 - vehicle['length_cells']
+def find_empty_position(vehicle, ship_layout, existing_vehicles, grid_step=1.0):
+    """
+    Mencari posisi kosong untuk kendaraan
+    """
+    max_x = ship_layout['width'] - vehicle['width']
+    max_y = ship_layout['length'] - vehicle['length']
     
-    for y in range(max_y + 1):
-        for x in range(max_x + 1):
-            vehicle['x'] = x
-            vehicle['y'] = y
+    # Coba posisi yang mungkin
+    for y in np.arange(0, max_y + grid_step, grid_step):
+        for x in np.arange(0, max_x + grid_step, grid_step):
+            vehicle['x'] = round(x, 2)
+            vehicle['y'] = round(y, 2)
             
             collision = False
             for existing in existing_vehicles:
@@ -224,18 +224,12 @@ def add_vehicle(name, length, width, vehicle_type="custom", icon="🚙"):
     
     ship_layout = st.session_state.ship_layout
     
-    # Konversi ukuran ke jumlah sel grid
-    width_cells = max(1, math.ceil(width / (ship_layout['width'] / ship_layout['lanes'])))
-    length_cells = max(1, math.ceil(length / (ship_layout['length'] / 10)))
-    
     new_vehicle = {
         'id': st.session_state.next_vehicle_id,
         'name': name,
         'type': vehicle_type,
         'length': length,
         'width': width,
-        'length_cells': length_cells,
-        'width_cells': width_cells,
         'x': 0,
         'y': 0,
         'color': get_random_color(),
@@ -270,15 +264,6 @@ def calculate_statistics():
     # Persentase penggunaan
     usage_percentage = (used_area / ship_area) * 100 if ship_area > 0 else 0
     
-    # Hitung efisiensi packing
-    grid_cells = ship_layout['lanes'] * 10
-    used_cells = 0
-    
-    for vehicle in st.session_state.vehicles:
-        used_cells += vehicle['length_cells'] * vehicle['width_cells']
-    
-    packing_efficiency = (used_cells / grid_cells) * 100 if grid_cells > 0 else 0
-    
     # Hitung jumlah kendaraan per tipe
     vehicle_types = {}
     for vehicle in st.session_state.vehicles:
@@ -290,80 +275,133 @@ def calculate_statistics():
         'ship_area': ship_area,
         'used_area': used_area,
         'usage_percentage': usage_percentage,
-        'packing_efficiency': packing_efficiency,
         'vehicle_count': len(st.session_state.vehicles),
-        'grid_cells': grid_cells,
-        'used_cells': used_cells,
         'vehicle_types': vehicle_types,
         'capacity_percentage': (len(st.session_state.vehicles) / st.session_state.max_vehicles) * 100
     }
 
-# Fungsi untuk membuat visualisasi kapal
+# FUNGSI UTAMA: Membuat visualisasi kapal sederhana
 def create_ship_visualization():
     ship_layout = st.session_state.ship_layout
     vehicles = st.session_state.vehicles
     
-    # Buat grid
+    # Buat figure
     fig = go.Figure()
     
-    # Tambahkan grid background
-    for i in range(ship_layout['lanes'] + 1):
+    # Tambahkan outline kapal (background)
+    fig.add_shape(
+        type="rect",
+        x0=0, y0=0,
+        x1=ship_layout['width'], 
+        y1=ship_layout['length'],
+        fillcolor='#e6f7ff',
+        line=dict(color='#1a2980', width=3),
+        layer='below'
+    )
+    
+    # Tambahkan grid lines sederhana
+    grid_size = 5  # meter
+    for x in np.arange(0, ship_layout['width'] + grid_size, grid_size):
         fig.add_shape(
             type="line",
-            x0=i, y0=0, x1=i, y1=10,
-            line=dict(color="rgba(0,0,0,0.2)", width=1)
+            x0=x, y0=0, x1=x, y1=ship_layout['length'],
+            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dot"),
+            layer='below'
         )
     
-    for j in range(11):
+    for y in np.arange(0, ship_layout['length'] + grid_size, grid_size):
         fig.add_shape(
             type="line",
-            x0=0, y0=j, x1=ship_layout['lanes'], y1=j,
-            line=dict(color="rgba(0,0,0,0.2)", width=1)
+            x0=0, y0=y, x1=ship_layout['width'], y1=y,
+            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dot"),
+            layer='below'
         )
     
     # Tambahkan kendaraan
     for vehicle in vehicles:
-        fig.add_shape(
-            type="rect",
-            x0=vehicle['x'], y0=vehicle['y'],
-            x1=vehicle['x'] + vehicle['width_cells'], 
-            y1=vehicle['y'] + vehicle['length_cells'],
+        # Koordinat empat titik persegi panjang
+        x0 = vehicle['x']
+        y0 = vehicle['y']
+        x1 = vehicle['x'] + vehicle['width']
+        y1 = vehicle['y'] + vehicle['length']
+        
+        # Persegi panjang kendaraan
+        fig.add_trace(go.Scatter(
+            x=[x0, x1, x1, x0, x0],
+            y=[y0, y0, y1, y1, y0],
+            mode='lines',
+            fill='toself',
             fillcolor=vehicle['color'],
             line=dict(color=darken_color(vehicle['color'], 30), width=2),
-            opacity=0.8
-        )
+            name=vehicle['name'],
+            text=f"{vehicle['name']}<br>{vehicle['length']}m × {vehicle['width']}m",
+            hoverinfo='text',
+            showlegend=False
+        ))
         
-        # Tambahkan label kendaraan dengan ikon
-        fig.add_annotation(
-            x=vehicle['x'] + vehicle['width_cells'] / 2,
-            y=vehicle['y'] + vehicle['length_cells'] / 2,
-            text=f"{vehicle['icon']} {vehicle['name']}",
-            showarrow=False,
-            font=dict(size=10, color="white"),
-            textangle=0
-        )
+        # Tambahkan ikon di tengah
+        center_x = (x0 + x1) / 2
+        center_y = (y0 + y1) / 2
+        
+        fig.add_trace(go.Scatter(
+            x=[center_x],
+            y=[center_y],
+            mode='text',
+            text=[vehicle['icon']],
+            textfont=dict(size=16, color='white'),
+            showlegend=False,
+            hoverinfo='none'
+        ))
+    
+    # Highlight kendaraan yang dipilih
+    if st.session_state.selected_vehicle:
+        vehicle = st.session_state.selected_vehicle
+        x0 = vehicle['x']
+        y0 = vehicle['y']
+        x1 = vehicle['x'] + vehicle['width']
+        y1 = vehicle['y'] + vehicle['length']
+        
+        # Border highlight
+        fig.add_trace(go.Scatter(
+            x=[x0, x1, x1, x0, x0],
+            y=[y0, y0, y1, y1, y0],
+            mode='lines',
+            line=dict(color='yellow', width=4),
+            showlegend=False,
+            hoverinfo='none'
+        ))
     
     # Konfigurasi layout
     fig.update_layout(
-        title="Layout Kapal Ro-Ro",
-        xaxis_title="Lajur",
-        yaxis_title="Posisi (depan ke belakang)",
+        title=f"Layout Kapal ({ship_layout['length']}m × {ship_layout['width']}m)",
+        xaxis_title="Lebar Kapal (meter)",
+        yaxis_title="Panjang Kapal (meter)",
         width=800,
         height=500,
         xaxis=dict(
-            range=[0, ship_layout['lanes']],
-            dtick=1,
-            gridcolor="rgba(0,0,0,0.1)"
+            range=[-1, ship_layout['width'] + 1],
+            gridcolor="rgba(0,0,0,0.1)",
+            showgrid=True,
+            dtick=5,
+            tick0=0
         ),
         yaxis=dict(
-            range=[0, 10],
-            dtick=1,
-            gridcolor="rgba(0,0,0,0.1)"
+            range=[-1, ship_layout['length'] + 1],
+            gridcolor="rgba(0,0,0,0.1)",
+            showgrid=True,
+            dtick=5,
+            tick0=0
         ),
-        plot_bgcolor="#e6f7ff",
+        plot_bgcolor="white",
         paper_bgcolor="white",
-        showlegend=False
+        showlegend=False,
+        margin=dict(l=20, r=20, t=40, b=20),
+        hovermode='closest'
     )
+    
+    # Pastikan skala proporsional
+    fig.update_xaxes(constrain='domain', scaleratio=1)
+    fig.update_yaxes(constrain='domain', scaleratio=1)
     
     return fig
 
@@ -402,17 +440,14 @@ with col1:
     # Input ukuran kapal
     ship_length = st.number_input(
         "Panjang Kapal (meter):", 
-        min_value=10, max_value=200, value=st.session_state.ship_layout['length'], key="ship_length_input"
+        min_value=10.0, max_value=200.0, value=float(st.session_state.ship_layout['length']), 
+        step=0.5, key="ship_length_input", format="%.1f"
     )
     
     ship_width = st.number_input(
         "Lebar Kapal (meter):", 
-        min_value=5, max_value=50, value=st.session_state.ship_layout['width'], key="ship_width_input"
-    )
-    
-    lane_count = st.number_input(
-        "Jumlah Lajur:", 
-        min_value=1, max_value=10, value=st.session_state.ship_layout['lanes'], key="lane_count_input"
+        min_value=5.0, max_value=50.0, value=float(st.session_state.ship_layout['width']), 
+        step=0.5, key="ship_width_input", format="%.1f"
     )
     
     # Pengaturan jumlah maksimum kendaraan
@@ -426,11 +461,21 @@ with col1:
     
     if st.button("🔄 Update Layout Kapal", use_container_width=True):
         st.session_state.ship_layout = {
-            'length': ship_length,
-            'width': ship_width,
-            'lanes': lane_count
+            'length': float(ship_length),
+            'width': float(ship_width)
         }
         st.session_state.max_vehicles = max_vehicles
+        
+        # Periksa apakah kendaraan masih muat
+        for vehicle in st.session_state.vehicles:
+            if not fits_on_ship(vehicle, st.session_state.ship_layout):
+                st.warning(f"Kendaraan {vehicle['name']} tidak muat setelah resize kapal!")
+                # Cari posisi baru
+                if not find_empty_position(vehicle, st.session_state.ship_layout, 
+                                         [v for v in st.session_state.vehicles if v['id'] != vehicle['id']]):
+                    st.error(f"Tidak ada ruang untuk {vehicle['name']}. Kendaraan akan dihapus.")
+                    remove_vehicle(vehicle['id'])
+        
         st.success("Layout kapal berhasil diupdate!")
         st.rerun()
     
@@ -440,28 +485,34 @@ with col1:
     st.markdown("Pilih kendaraan untuk ditambahkan:")
     
     # Kendaraan default
-    col_veh1, col_veh2 = st.columns(2)
+    if st.button(f"🏍️ Motor (2.0m × 0.8m)", 
+                use_container_width=True, 
+                help="Motor: Panjang 2.0m, Lebar 0.8m"):
+        add_vehicle("Motor", 2.0, 0.8, "motor", "🏍️")
+        st.rerun()
     
-    with col_veh1:
-        if st.button("🏍️ Motor (2m × 0.8m)", use_container_width=True, help="Motor dengan ukuran standar"):
-            add_vehicle("Motor", 2.0, 0.8, "motor", "🏍️")
-            st.rerun()
-        
-        if st.button("🚗 Mobil Sedang (5m × 2m)", use_container_width=True, help="Mobil ukuran sedang"):
-            add_vehicle("Mobil Sedang", 5, 2, "car", "🚗")
-            st.rerun()
+    if st.button(f"🚗 Mobil Kecil (4.5m × 1.8m)", 
+                use_container_width=True, 
+                help="Mobil Kecil: Panjang 4.5m, Lebar 1.8m"):
+        add_vehicle("Mobil Kecil", 4.5, 1.8, "car", "🚗")
+        st.rerun()
     
-    with col_veh2:
-        if st.button("🚙 Mobil Kecil (4.5m × 1.8m)", use_container_width=True, help="Mobil ukuran kecil"):
-            add_vehicle("Mobil Kecil", 4.5, 1.8, "car", "🚙")
-            st.rerun()
-        
-        if st.button("🚚 Truk (10m × 2.5m)", use_container_width=True, help="Truk ukuran standar"):
-            add_vehicle("Truk", 10, 2.5, "truck", "🚚")
-            st.rerun()
+    if st.button(f"🚙 Mobil Sedang (5.0m × 2.0m)", 
+                use_container_width=True, 
+                help="Mobil Sedang: Panjang 5.0m, Lebar 2.0m"):
+        add_vehicle("Mobil Sedang", 5.0, 2.0, "car", "🚙")
+        st.rerun()
     
-    if st.button("🚌 Bus (12m × 2.5m)", use_container_width=True, help="Bus ukuran standar"):
-        add_vehicle("Bus", 12, 2.5, "bus", "🚌")
+    if st.button(f"🚚 Truk (10.0m × 2.5m)", 
+                use_container_width=True, 
+                help="Truk: Panjang 10.0m, Lebar 2.5m"):
+        add_vehicle("Truk", 10.0, 2.5, "truck", "🚚")
+        st.rerun()
+    
+    if st.button(f"🚌 Bus (12.0m × 2.5m)", 
+                use_container_width=True, 
+                help="Bus: Panjang 12.0m, Lebar 2.5m"):
+        add_vehicle("Bus", 12.0, 2.5, "bus", "🚌")
         st.rerun()
     
     st.divider()
@@ -469,8 +520,12 @@ with col1:
     st.markdown("### 🛠️ Kendaraan Kustom")
     
     custom_name = st.text_input("Nama Kendaraan:", value="Kendaraan Kustom")
-    custom_length = st.number_input("Panjang (m):", min_value=0.5, max_value=30.0, value=6.0, step=0.1)
-    custom_width = st.number_input("Lebar (m):", min_value=0.5, max_value=10.0, value=2.0, step=0.1)
+    
+    col_custom_size1, col_custom_size2 = st.columns(2)
+    with col_custom_size1:
+        custom_length = st.number_input("Panjang (m):", min_value=0.5, max_value=30.0, value=6.0, step=0.1, format="%.1f")
+    with col_custom_size2:
+        custom_width = st.number_input("Lebar (m):", min_value=0.5, max_value=10.0, value=2.0, step=0.1, format="%.1f")
     
     col_custom1, col_custom2 = st.columns(2)
     with col_custom1:
@@ -483,7 +538,7 @@ with col1:
         st.rerun()
 
 with col2:
-    st.markdown("### 🗺️ Layout Kapal Ro-Ro")
+    st.markdown("### 🗺️ Layout Kapal")
     
     # Visualisasi kapal
     fig = create_ship_visualization()
@@ -513,7 +568,19 @@ with col2:
         st.metric("Penggunaan Kapal", f"{stats['usage_percentage']:.1f}%")
     
     with col_stat4:
-        st.metric("Efisiensi Packing", f"{stats['packing_efficiency']:.1f}%")
+        free_area = stats['ship_area'] - stats['used_area']
+        st.metric("Sisa Luas", f"{free_area:.1f} m²")
+    
+    # Informasi ukuran
+    with st.expander("📏 Informasi Ukuran"):
+        ship_layout = st.session_state.ship_layout
+        st.write(f"**Ukuran Kapal:** {ship_layout['length']}m × {ship_layout['width']}m")
+        st.write(f"**Luas Kapal:** {ship_layout['length'] * ship_layout['width']:.1f} m²")
+        
+        if st.session_state.vehicles:
+            st.write("**Ukuran Kendaraan:**")
+            for vehicle in st.session_state.vehicles:
+                st.write(f"- {vehicle['name']}: {vehicle['length']}m × {vehicle['width']}m = {vehicle['length'] * vehicle['width']:.1f} m²")
     
     # Statistik per tipe kendaraan
     if stats['vehicle_types']:
@@ -546,89 +613,89 @@ with col2:
         selected_vehicle = next(v for v in st.session_state.vehicles if v['id'] == selected_vehicle_id)
         st.session_state.selected_vehicle = selected_vehicle
         
+        # Input koordinat manual
+        st.markdown("**Atur Posisi Manual:**")
+        col_pos1, col_pos2 = st.columns(2)
+        
+        with col_pos1:
+            new_x = st.number_input(
+                "Posisi X (meter dari kiri):", 
+                min_value=0.0, max_value=ship_width, 
+                value=float(selected_vehicle['x']), step=0.1, format="%.1f",
+                key=f"pos_x_{selected_vehicle_id}"
+            )
+        
+        with col_pos2:
+            new_y = st.number_input(
+                "Posisi Y (meter dari depan):", 
+                min_value=0.0, max_value=ship_length, 
+                value=float(selected_vehicle['y']), step=0.1, format="%.1f",
+                key=f"pos_y_{selected_vehicle_id}"
+            )
+        
+        if st.button("📍 Pindah ke Posisi", use_container_width=True):
+            # Simpan posisi lama
+            old_x, old_y = selected_vehicle['x'], selected_vehicle['y']
+            
+            # Update posisi
+            selected_vehicle['x'] = new_x
+            selected_vehicle['y'] = new_y
+            
+            # Cek tabrakan dan batas
+            collision = False
+            for vehicle in st.session_state.vehicles:
+                if vehicle['id'] != selected_vehicle_id and check_collision(selected_vehicle, vehicle):
+                    collision = True
+                    st.warning(f"Tabrakan dengan {vehicle['name']}!")
+                    break
+            
+            if not fits_on_ship(selected_vehicle, st.session_state.ship_layout):
+                st.error("Posisi di luar batas kapal!")
+                selected_vehicle['x'], selected_vehicle['y'] = old_x, old_y
+            elif collision:
+                selected_vehicle['x'], selected_vehicle['y'] = old_x, old_y
+            else:
+                st.success("Posisi berhasil diubah!")
+            st.rerun()
+        
+        # Tombol kontrol arah
+        st.markdown("**Kontrol Arah:**")
         col_move1, col_move2, col_move3 = st.columns(3)
         
+        move_step = st.slider("Langkah pergerakan (meter):", 0.1, 2.0, 0.5, 0.1)
+        
         with col_move1:
-            if st.button("⬆️ Geser ke Atas", use_container_width=True):
-                # Cek apakah bisa bergerak ke atas
-                if selected_vehicle['y'] > 0:
-                    selected_vehicle['y'] -= 1
-                    # Periksa tabrakan
-                    collision = False
-                    for vehicle in st.session_state.vehicles:
-                        if vehicle['id'] != selected_vehicle['id'] and check_collision(selected_vehicle, vehicle):
-                            collision = True
-                            break
-                    
-                    if collision or not fits_on_ship(selected_vehicle, st.session_state.ship_layout):
-                        selected_vehicle['y'] += 1
-                        st.warning("Tidak bisa bergerak ke atas, terjadi tabrakan atau keluar batas!")
-                    st.rerun()
+            if st.button("⬆️ Maju", use_container_width=True):
+                selected_vehicle['y'] += move_step
+                if not fits_on_ship(selected_vehicle, st.session_state.ship_layout) or any(check_collision(selected_vehicle, v) for v in st.session_state.vehicles if v['id'] != selected_vehicle_id):
+                    selected_vehicle['y'] -= move_step
+                st.rerun()
         
         with col_move2:
-            if st.button("⬅️ Geser ke Kiri", use_container_width=True):
-                if selected_vehicle['x'] > 0:
-                    selected_vehicle['x'] -= 1
-                    collision = False
-                    for vehicle in st.session_state.vehicles:
-                        if vehicle['id'] != selected_vehicle['id'] and check_collision(selected_vehicle, vehicle):
-                            collision = True
-                            break
-                    
-                    if collision or not fits_on_ship(selected_vehicle, st.session_state.ship_layout):
-                        selected_vehicle['x'] += 1
-                        st.warning("Tidak bisa bergerak ke kiri, terjadi tabrakan atau keluar batas!")
-                    st.rerun()
+            if st.button("⬅️ Kiri", use_container_width=True):
+                selected_vehicle['x'] -= move_step
+                if not fits_on_ship(selected_vehicle, st.session_state.ship_layout) or any(check_collision(selected_vehicle, v) for v in st.session_state.vehicles if v['id'] != selected_vehicle_id):
+                    selected_vehicle['x'] += move_step
+                st.rerun()
             
-            if st.button("➡️ Geser ke Kanan", use_container_width=True):
-                max_x = st.session_state.ship_layout['lanes'] - selected_vehicle['width_cells']
-                if selected_vehicle['x'] < max_x:
-                    selected_vehicle['x'] += 1
-                    collision = False
-                    for vehicle in st.session_state.vehicles:
-                        if vehicle['id'] != selected_vehicle['id'] and check_collision(selected_vehicle, vehicle):
-                            collision = True
-                            break
-                    
-                    if collision or not fits_on_ship(selected_vehicle, st.session_state.ship_layout):
-                        selected_vehicle['x'] -= 1
-                        st.warning("Tidak bisa bergerak ke kanan, terjadi tabrakan atau keluar batas!")
-                    st.rerun()
+            if st.button("➡️ Kanan", use_container_width=True):
+                selected_vehicle['x'] += move_step
+                if not fits_on_ship(selected_vehicle, st.session_state.ship_layout) or any(check_collision(selected_vehicle, v) for v in st.session_state.vehicles if v['id'] != selected_vehicle_id):
+                    selected_vehicle['x'] -= move_step
+                st.rerun()
         
         with col_move3:
-            if st.button("⬇️ Geser ke Bawah", use_container_width=True):
-                max_y = 10 - selected_vehicle['length_cells']
-                if selected_vehicle['y'] < max_y:
-                    selected_vehicle['y'] += 1
-                    collision = False
-                    for vehicle in st.session_state.vehicles:
-                        if vehicle['id'] != selected_vehicle['id'] and check_collision(selected_vehicle, vehicle):
-                            collision = True
-                            break
-                    
-                    if collision or not fits_on_ship(selected_vehicle, st.session_state.ship_layout):
-                        selected_vehicle['y'] -= 1
-                        st.warning("Tidak bisa bergerak ke bawah, terjadi tabrakan atau keluar batas!")
-                    st.rerun()
-        
-        # Tombol hapus dan duplikat
-        col_action1, col_action2 = st.columns(2)
-        with col_action1:
-            if st.button("🗑️ Hapus Kendaraan", type="secondary", use_container_width=True):
-                remove_vehicle(selected_vehicle_id)
-                st.success("Kendaraan berhasil dihapus!")
+            if st.button("⬇️ Mundur", use_container_width=True):
+                selected_vehicle['y'] -= move_step
+                if not fits_on_ship(selected_vehicle, st.session_state.ship_layout) or any(check_collision(selected_vehicle, v) for v in st.session_state.vehicles if v['id'] != selected_vehicle_id):
+                    selected_vehicle['y'] += move_step
                 st.rerun()
         
-        with col_action2:
-            if st.button("📋 Duplikat Kendaraan", use_container_width=True):
-                add_vehicle(
-                    f"{selected_vehicle['name']} (Copy)", 
-                    selected_vehicle['length'], 
-                    selected_vehicle['width'], 
-                    selected_vehicle['type'], 
-                    selected_vehicle['icon']
-                )
-                st.rerun()
+        # Tombol hapus
+        if st.button("🗑️ Hapus Kendaraan", type="secondary", use_container_width=True):
+            remove_vehicle(selected_vehicle_id)
+            st.success("Kendaraan berhasil dihapus!")
+            st.rerun()
     
     else:
         st.info("Belum ada kendaraan di kapal. Tambahkan kendaraan dari panel kiri.")
@@ -644,7 +711,7 @@ with col3:
             <h4 style="margin-top: 0; color: #1a2980;">{vehicle['icon']} {vehicle['name']}</h4>
             <p><strong>Tipe:</strong> {vehicle['type'].capitalize()}</p>
             <p><strong>Ukuran:</strong> {vehicle['length']}m × {vehicle['width']}m</p>
-            <p><strong>Posisi:</strong> Lajur {vehicle['x'] + 1}, Posisi {vehicle['y'] + 1}</p>
+            <p><strong>Posisi:</strong> X={vehicle['x']:.1f}m, Y={vehicle['y']:.1f}m</p>
             <p><strong>Luas:</strong> {vehicle['length'] * vehicle['width']:.1f} m²</p>
             <p><strong>ID:</strong> {vehicle['id']}</p>
             <div style="display: flex; align-items: center; margin-top: 10px;">
@@ -660,25 +727,39 @@ with col3:
         
         with st.form(key=f"edit_vehicle_{vehicle['id']}"):
             new_name = st.text_input("Nama Baru:", value=vehicle['name'])
-            new_length = st.number_input("Panjang Baru (m):", value=float(vehicle['length']), min_value=0.5, max_value=30.0, step=0.1)
-            new_width = st.number_input("Lebar Baru (m):", value=float(vehicle['width']), min_value=0.5, max_value=10.0, step=0.1)
+            
+            col_edit1, col_edit2 = st.columns(2)
+            with col_edit1:
+                new_length = st.number_input("Panjang Baru (m):", 
+                                           value=float(vehicle['length']), 
+                                           min_value=0.5, max_value=30.0, step=0.1,
+                                           format="%.1f")
+            with col_edit2:
+                new_width = st.number_input("Lebar Baru (m):", 
+                                          value=float(vehicle['width']), 
+                                          min_value=0.5, max_value=10.0, step=0.1,
+                                          format="%.1f")
             
             if st.form_submit_button("💾 Simpan Perubahan", use_container_width=True):
+                # Simpan ukuran lama
+                old_length, old_width = vehicle['length'], vehicle['width']
+                
                 # Update data kendaraan
                 vehicle['name'] = new_name
                 vehicle['length'] = new_length
                 vehicle['width'] = new_width
                 
-                # Recalculate grid cells
-                ship_layout = st.session_state.ship_layout
-                vehicle['width_cells'] = max(1, math.ceil(new_width / (ship_layout['width'] / ship_layout['lanes'])))
-                vehicle['length_cells'] = max(1, math.ceil(new_length / (ship_layout['length'] / 10)))
-                
                 # Check if still fits
-                if not fits_on_ship(vehicle, ship_layout):
-                    st.warning("Ukuran baru tidak muat di posisi saat ini!")
-                    vehicle['length'] = vehicle['length']  # Revert changes
-                    vehicle['width'] = vehicle['width']
+                if not fits_on_ship(vehicle, st.session_state.ship_layout):
+                    st.warning("Ukuran baru tidak muat di posisi saat ini! Mencari posisi baru...")
+                    # Cari posisi baru
+                    if not find_empty_position(vehicle, st.session_state.ship_layout, 
+                                             [v for v in st.session_state.vehicles if v['id'] != vehicle['id']]):
+                        st.error("Tidak ada ruang yang cukup untuk ukuran baru ini!")
+                        # Revert changes
+                        vehicle['length'], vehicle['width'] = old_length, old_width
+                    else:
+                        st.success("Kendaraan berhasil dipindahkan ke posisi baru!")
                 else:
                     st.success("Kendaraan berhasil diperbarui!")
                 st.rerun()
@@ -716,24 +797,22 @@ with col3:
     st.markdown("### 🛠️ Alat Tambahan")
     
     if st.button("🔄 Atur Ulang Semua Kendaraan", use_container_width=True):
-        # Temukan posisi baru untuk semua kendaraan
-        vehicles_copy = st.session_state.vehicles.copy()
+        # Algoritma penempatan otomatis sederhana
+        vehicles_sorted = sorted(st.session_state.vehicles, 
+                               key=lambda v: v['length'] * v['width'], 
+                               reverse=True)
+        
         st.session_state.vehicles = []
         
-        success_count = 0
-        for vehicle in vehicles_copy:
+        for vehicle in vehicles_sorted:
             vehicle['x'] = 0
             vehicle['y'] = 0
             if find_empty_position(vehicle, st.session_state.ship_layout, st.session_state.vehicles):
                 st.session_state.vehicles.append(vehicle)
-                success_count += 1
             else:
                 st.warning(f"Tidak ada ruang untuk {vehicle['name']}")
         
-        if success_count == len(vehicles_copy):
-            st.success("Semua kendaraan berhasil diatur ulang!")
-        else:
-            st.warning(f"Hanya {success_count} dari {len(vehicles_copy)} kendaraan yang berhasil ditempatkan.")
+        st.success("Kendaraan berhasil diatur ulang!")
         st.rerun()
     
     if st.button("🗑️ Hapus Semua Kendaraan", type="secondary", use_container_width=True):
@@ -741,54 +820,32 @@ with col3:
         st.session_state.selected_vehicle = None
         st.success("Semua kendaraan berhasil dihapus!")
         st.rerun()
-    
-    # Tambah banyak kendaraan sekaligus
-    st.markdown("---")
-    st.markdown("### 🚚 Tambah Banyak Kendaraan")
-    
-    with st.expander("Tambah Multiple Kendaraan"):
-        vehicle_type_bulk = st.selectbox("Tipe Kendaraan:", ["motor", "car", "truck", "bus"], key="bulk_type")
-        count_bulk = st.number_input("Jumlah:", min_value=1, max_value=50, value=5, key="bulk_count")
-        
-        if st.button("➕ Tambah Multiple", use_container_width=True):
-            added_count = 0
-            for i in range(count_bulk):
-                if len(st.session_state.vehicles) >= st.session_state.max_vehicles:
-                    st.warning(f"Hanya {added_count} kendaraan yang berhasil ditambahkan. Batas maksimum tercapai.")
-                    break
-                
-                if vehicle_type_bulk == "motor":
-                    add_vehicle(f"Motor {i+1}", 2.0, 0.8, "motor", "🏍️")
-                elif vehicle_type_bulk == "car":
-                    add_vehicle(f"Mobil {i+1}", 4.5, 1.8, "car", "🚗")
-                elif vehicle_type_bulk == "truck":
-                    add_vehicle(f"Truk {i+1}", 10, 2.5, "truck", "🚚")
-                elif vehicle_type_bulk == "bus":
-                    add_vehicle(f"Bus {i+1}", 12, 2.5, "bus", "🚌")
-                
-                added_count += 1
-            
-            if added_count > 0:
-                st.success(f"Berhasil menambahkan {added_count} kendaraan!")
-            st.rerun()
 
 # Footer dengan instruksi
 st.divider()
 st.markdown("### 📖 Cara Menggunakan:")
 st.markdown("""
-1. **Atur ukuran kapal** di panel kiri (panjang, lebar, jumlah lajur, dan maksimum kendaraan)
+1. **Atur ukuran kapal** di panel kiri (panjang dan lebar dalam meter)
 2. **Tambahkan kendaraan** dengan menekan tombol kendaraan yang tersedia atau buat kendaraan kustom
-3. **Atur posisi kendaraan** dengan memilih kendaraan dan menggunakan tombol panah di panel tengah
-4. **Pantau statistik** penggunaan ruang di kapal dan distribusi kendaraan
+3. **Atur posisi kendaraan** dengan:
+   - Input koordinat manual (X, Y dalam meter)
+   - Tombol arah dengan langkah yang dapat disesuaikan
+4. **Pantau statistik** penggunaan ruang di kapal
 5. **Edit kendaraan** untuk mengubah ukuran atau nama
 6. **Ekspor/Impor layout** untuk menyimpan atau memuat konfigurasi
-7. **Gunakan alat tambahan** untuk mengatur ulang, menghapus, atau menambah banyak kendaraan sekaligus
+7. **Gunakan alat tambahan** untuk mengatur ulang atau menghapus semua kendaraan
+
+**Ukuran Standar Kendaraan:**
+- Motor: 2.0m × 0.8m
+- Mobil Kecil: 4.5m × 1.8m
+- Mobil Sedang: 5.0m × 2.0m
+- Truk: 10.0m × 2.5m
+- Bus: 12.0m × 2.5m
 
 **Tips:**
-- Setiap kendaraan ditampilkan dengan warna dan ikon berbeda untuk memudahkan identifikasi
-- Sistem akan mencegah penempatan kendaraan yang bertabrakan
-- Kapal dibagi menjadi grid 10×N (N = jumlah lajur)
-- Motor membutuhkan ruang lebih kecil (2m × 0.8m) sehingga bisa menampung lebih banyak
+- Sistem otomatis mencegah tabrakan antar kendaraan
+- Setiap kendaraan memiliki warna unik untuk identifikasi
+- Skala gambar proporsional dengan ukuran sebenarnya
 """)
 
 # Menampilkan data kendaraan dalam tabel
@@ -796,7 +853,7 @@ if st.session_state.vehicles:
     st.divider()
     st.markdown("### 📋 Daftar Kendaraan di Kapal")
     
-    # Buat dataframe untuk tabel dengan warna
+    # Buat dataframe untuk tabel
     vehicles_data = []
     for vehicle in st.session_state.vehicles:
         vehicles_data.append({
@@ -806,26 +863,33 @@ if st.session_state.vehicles:
             'Tipe': vehicle['type'].capitalize(),
             'Panjang (m)': vehicle['length'],
             'Lebar (m)': vehicle['width'],
-            'Luas (m²)': round(vehicle['length'] * vehicle['width'], 1),
-            'Posisi X': vehicle['x'],
-            'Posisi Y': vehicle['y'],
+            'X (m)': f"{vehicle['x']:.1f}",
+            'Y (m)': f"{vehicle['y']:.1f}",
+            'Luas (m²)': f"{vehicle['length'] * vehicle['width']:.1f}",
             'Warna': vehicle['color']
         })
     
     df = pd.DataFrame(vehicles_data)
     
     # Format dataframe dengan warna
-    def color_row(val):
-        color = df.loc[df['Warna'] == val, 'Warna'].values[0]
-        return f'background-color: {color}20'
+    def color_row(row):
+        color = row['Warna']
+        return [f'background-color: {color}20' for _ in row]
     
-    styled_df = df.style.apply(lambda x: [color_row(x['Warna']) for _ in x], axis=1)
-    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+    styled_df = df.style.apply(color_row, axis=1)
+    st.dataframe(styled_df, use_container_width=True, hide_index=True, 
+                column_config={
+                    "Warna": st.column_config.TextColumn(disabled=True)
+                })
     
     # Ringkasan
+    total_area = sum(v['length'] * v['width'] for v in st.session_state.vehicles)
+    ship_area = st.session_state.ship_layout['length'] * st.session_state.ship_layout['width']
+    
     st.markdown(f"""
     **Ringkasan:**
     - **Total Kendaraan:** {len(st.session_state.vehicles)} dari {st.session_state.max_vehicles} maksimum
+    - **Total Luas Terpakai:** {total_area:.1f} m² dari {ship_area:.1f} m² ({total_area/ship_area*100:.1f}%)
     - **Motor:** {stats['vehicle_types'].get('motor', 0)} unit
     - **Mobil:** {stats['vehicle_types'].get('car', 0)} unit
     - **Truk:** {stats['vehicle_types'].get('truck', 0)} unit
