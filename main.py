@@ -1,4 +1,4 @@
-# app.py - Aplikasi Layout Kapal Ro-Ro Sederhana
+# app.py - Aplikasi Layout Kapal Ro-Ro
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -121,6 +121,15 @@ st.markdown("""
         border-radius: 5px;
         transition: width 0.3s ease;
     }
+    
+    .coordinate-display {
+        background-color: #f8f9fa;
+        border-radius: 5px;
+        padding: 0.5rem;
+        font-family: monospace;
+        font-size: 0.9rem;
+        margin: 0.5rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -139,9 +148,6 @@ if 'next_vehicle_id' not in st.session_state:
 
 if 'selected_vehicle' not in st.session_state:
     st.session_state.selected_vehicle = None
-
-if 'max_vehicles' not in st.session_state:
-    st.session_state.max_vehicles = 20
 
 # Warna untuk kendaraan
 vehicle_colors = [
@@ -191,16 +197,20 @@ def fits_on_ship(vehicle, ship_layout):
     return True
 
 # Fungsi untuk menemukan posisi kosong untuk kendaraan
-def find_empty_position(vehicle, ship_layout, existing_vehicles, grid_step=1.0):
+def find_empty_position(vehicle, ship_layout, existing_vehicles, grid_step=0.5):
     """
-    Mencari posisi kosong untuk kendaraan
+    Mencari posisi kosong untuk kendaraan dengan grid tertentu
+    grid_step: resolusi pencarian dalam meter
     """
     max_x = ship_layout['width'] - vehicle['width']
     max_y = ship_layout['length'] - vehicle['length']
     
-    # Coba posisi yang mungkin
-    for y in np.arange(0, max_y + grid_step, grid_step):
-        for x in np.arange(0, max_x + grid_step, grid_step):
+    # Generate grid points
+    x_points = np.arange(0, max_x + grid_step, grid_step)
+    y_points = np.arange(0, max_y + grid_step, grid_step)
+    
+    for y in y_points:
+        for x in x_points:
             vehicle['x'] = round(x, 2)
             vehicle['y'] = round(y, 2)
             
@@ -217,11 +227,6 @@ def find_empty_position(vehicle, ship_layout, existing_vehicles, grid_step=1.0):
 
 # Fungsi untuk menambahkan kendaraan
 def add_vehicle(name, length, width, vehicle_type="custom", icon="🚙"):
-    # Cek apakah sudah mencapai batas maksimum kendaraan
-    if len(st.session_state.vehicles) >= st.session_state.max_vehicles:
-        st.warning(f"Tidak dapat menambahkan kendaraan. Batas maksimum {st.session_state.max_vehicles} kendaraan telah tercapai.")
-        return
-    
     ship_layout = st.session_state.ship_layout
     
     new_vehicle = {
@@ -276,8 +281,7 @@ def calculate_statistics():
         'used_area': used_area,
         'usage_percentage': usage_percentage,
         'vehicle_count': len(st.session_state.vehicles),
-        'vehicle_types': vehicle_types,
-        'capacity_percentage': (len(st.session_state.vehicles) / st.session_state.max_vehicles) * 100
+        'vehicle_types': vehicle_types
     }
 
 # FUNGSI UTAMA: Membuat visualisasi kapal dengan titik-titik
@@ -299,24 +303,6 @@ def create_ship_dots_visualization():
         layer='below'
     )
     
-    # Tambahkan grid lines
-    grid_size = 5  # meter
-    for x in np.arange(0, ship_layout['width'] + grid_size, grid_size):
-        fig.add_shape(
-            type="line",
-            x0=x, y0=0, x1=x, y1=ship_layout['length'],
-            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dash"),
-            layer='below'
-        )
-    
-    for y in np.arange(0, ship_layout['length'] + grid_size, grid_size):
-        fig.add_shape(
-            type="line",
-            x0=0, y0=y, x1=ship_layout['width'], y1=y,
-            line=dict(color="rgba(0,0,0,0.1)", width=1, dash="dash"),
-            layer='below'
-        )
-    
     # Tambahkan titik-titik untuk setiap kendaraan
     all_dots_x = []
     all_dots_y = []
@@ -326,14 +312,13 @@ def create_ship_dots_visualization():
     
     for vehicle in vehicles:
         # Generate titik-titik dalam area kendaraan
-        num_points = max(5, int(vehicle['length'] * vehicle['width'] * 0.5))  # Lebih banyak titik untuk area yang lebih besar
+        num_points = max(5, int(vehicle['length'] * vehicle['width'] * 0.5))
         
         # Titik acak dalam area kendaraan
         dots_x = []
         dots_y = []
         
         # Buat pola titik yang lebih terstruktur
-        # Gunakan grid kecil dalam area kendaraan
         dot_spacing = min(0.5, max(0.2, min(vehicle['length'], vehicle['width']) / 5))
         
         # Titik-titik grid
@@ -483,8 +468,7 @@ def export_layout():
     export_data = {
         'ship_layout': st.session_state.ship_layout,
         'vehicles': st.session_state.vehicles,
-        'next_vehicle_id': st.session_state.next_vehicle_id,
-        'max_vehicles': st.session_state.max_vehicles
+        'next_vehicle_id': st.session_state.next_vehicle_id
     }
     return json.dumps(export_data, indent=2)
 
@@ -495,14 +479,13 @@ def import_layout(json_str):
         st.session_state.ship_layout = import_data.get('ship_layout', st.session_state.ship_layout)
         st.session_state.vehicles = import_data.get('vehicles', [])
         st.session_state.next_vehicle_id = import_data.get('next_vehicle_id', st.session_state.next_vehicle_id + 1)
-        st.session_state.max_vehicles = import_data.get('max_vehicles', st.session_state.max_vehicles)
         return True
     except:
         return False
 
 # UI Header
 st.markdown('<h1 class="main-header">🚢 Ro-Ro Layout Planner</h1>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Atur layout kapal Ro-Ro dengan kendaraan berukuran bervariasi</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Atur layout kapal Ro-Ro dengan visualisasi titik</p>', unsafe_allow_html=True)
 
 # Layout utama
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -510,7 +493,7 @@ col1, col2, col3 = st.columns([1, 2, 1])
 with col1:
     st.markdown("### ⚙️ Kontrol Layout Kapal")
     
-    # Input ukuran kapal
+    # Input ukuran kapal saja
     ship_length = st.number_input(
         "Panjang Kapal (meter):", 
         min_value=10.0, max_value=200.0, value=float(st.session_state.ship_layout['length']), 
@@ -523,37 +506,12 @@ with col1:
         step=0.5, key="ship_width_input", format="%.1f"
     )
     
-    # Pengaturan jumlah maksimum kendaraan
-    st.markdown("---")
-    st.markdown("### 📊 Pengaturan Kendaraan")
-    
-    max_vehicles = st.number_input(
-        "Maksimum Jumlah Kendaraan:", 
-        min_value=1, max_value=100, value=st.session_state.max_vehicles, key="max_vehicles_input"
-    )
-    
-    # Tambahkan pengaturan visualisasi
-    st.markdown("---")
-    st.markdown("### 🎨 Pengaturan Visualisasi")
-    
-    dot_density = st.slider(
-        "Kepadatan Titik:", 
-        min_value=1, max_value=10, value=5,
-        help="Mengatur seberapa padat titik-titik dalam visualisasi"
-    )
-    
-    dot_size = st.slider(
-        "Ukuran Titik:", 
-        min_value=3, max_value=15, value=8,
-        help="Mengatur ukuran titik-titik dalam visualisasi"
-    )
-    
+    # Hanya tombol update layout
     if st.button("🔄 Update Layout Kapal", use_container_width=True):
         st.session_state.ship_layout = {
             'length': float(ship_length),
             'width': float(ship_width)
         }
-        st.session_state.max_vehicles = max_vehicles
         
         # Periksa apakah kendaraan masih muat
         for vehicle in st.session_state.vehicles:
@@ -627,7 +585,7 @@ with col1:
         st.rerun()
 
 with col2:
-    st.markdown("### 🗺️ Layout Kapal - Visualisasi Titik")
+    st.markdown("### 🗺️ Layout Kapal")
     
     # Visualisasi kapal dengan titik-titik
     fig = create_ship_dots_visualization()
@@ -635,15 +593,6 @@ with col2:
     
     # Statistik kapal
     stats = calculate_statistics()
-    
-    # Meter kapasitas kendaraan
-    st.markdown(f"**Kapasitas Kendaraan:** {len(st.session_state.vehicles)}/{st.session_state.max_vehicles}")
-    capacity_color = "green" if stats['capacity_percentage'] < 80 else "orange" if stats['capacity_percentage'] < 95 else "red"
-    st.markdown(f"""
-    <div class="capacity-meter">
-        <div class="capacity-fill" style="width: {stats['capacity_percentage']}%; background-color: {capacity_color};"></div>
-    </div>
-    """, unsafe_allow_html=True)
     
     col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
     
@@ -659,40 +608,6 @@ with col2:
     with col_stat4:
         free_area = stats['ship_area'] - stats['used_area']
         st.metric("Sisa Luas", f"{free_area:.1f} m²")
-    
-    # Informasi visualisasi
-    with st.expander("ℹ️ Informasi Visualisasi Titik"):
-        st.write("**Visualisasi Titik:**")
-        st.write("- Setiap titik mewakili area kendaraan")
-        st.write("- Titik-titik dengan warna sama = satu kendaraan")
-        st.write("- Titik besar di tengah = pusat kendaraan dengan ikon")
-        st.write("- Area kuning = kendaraan yang sedang dipilih")
-        st.write("- Grid garis putus-putus = pembagi 5 meter")
-        
-        if st.session_state.vehicles:
-            st.write("**Legenda Warna:**")
-            for vehicle in st.session_state.vehicles[:6]:  # Tampilkan maksimal 6 warna
-                st.markdown(f"""
-                <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                    <div class="vehicle-color-box" style="background-color: {vehicle['color']};"></div>
-                    <span>{vehicle['name']} ({vehicle['icon']})</span>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    # Statistik per tipe kendaraan
-    if stats['vehicle_types']:
-        st.markdown("### 📈 Distribusi Kendaraan")
-        type_data = pd.DataFrame({
-            'Tipe': list(stats['vehicle_types'].keys()),
-            'Jumlah': list(stats['vehicle_types'].values())
-        })
-        
-        # Tampilkan chart kecil
-        col_chart1, col_chart2 = st.columns([2, 1])
-        with col_chart1:
-            st.bar_chart(type_data.set_index('Tipe'))
-        with col_chart2:
-            st.dataframe(type_data, use_container_width=True, hide_index=True)
     
     # Kontrol kendaraan
     st.markdown("### 🎮 Kontrol Kendaraan")
@@ -920,27 +835,28 @@ with col3:
 
 # Footer dengan instruksi
 st.divider()
-st.markdown("### 📖 Cara Menggunakan Visualisasi Titik:")
+st.markdown("### 📖 Cara Menggunakan:")
 st.markdown("""
-1. **Setiap titik mewakili area** dalam kendaraan
-2. **Warna titik menunjukkan kendaraan** yang berbeda
-3. **Titik besar di tengah** dengan ikon = pusat kendaraan
-4. **Grid garis putus-putus** = pembagi setiap 5 meter
-5. **Area kuning** = kendaraan yang sedang dipilih
-6. **Skala proporsional** dengan ukuran sebenarnya
+1. **Atur ukuran kapal** di panel kiri (panjang dan lebar dalam meter)
+2. **Tambahkan kendaraan** dengan menekan tombol kendaraan yang tersedia atau buat kendaraan kustom
+3. **Atur posisi kendaraan** dengan:
+   - Input koordinat manual (X, Y dalam meter)
+   - Tombol arah dengan langkah yang dapat disesuaikan
+4. **Pantau statistik** penggunaan ruang di kapal
+5. **Edit kendaraan** untuk mengubah ukuran atau nama
+6. **Ekspor/Impor layout** untuk menyimpan atau memuat konfigurasi
 
-**Cara Mengatur Layout:**
-1. **Atur ukuran kapal** di panel kiri
-2. **Tambahkan kendaraan** dengan tombol atau kendaraan kustom
-3. **Pilih kendaraan** untuk mengontrolnya
-4. **Atur posisi** dengan koordinat manual atau tombol arah
-5. **Pantau statistik** penggunaan ruang
+**Ukuran Standar Kendaraan:**
+- Motor: 2.0m × 0.8m
+- Mobil Kecil: 4.5m × 1.8m
+- Mobil Sedang: 5.0m × 2.0m
+- Truk: 10.0m × 2.5m
+- Bus: 12.0m × 2.5m
 
-**Tips Visualisasi Titik:**
-- Titik lebih padat = area kendaraan lebih besar
-- Titik dengan warna sama = kendaraan yang sama
-- Hover pada titik untuk melihat detail kendaraan
-- Kendaraan yang dipilih memiliki outline kuning
+**Tips:**
+- Sistem otomatis mencegah tabrakan antar kendaraan
+- Setiap kendaraan memiliki warna unik untuk identifikasi
+- Skala gambar proporsional dengan ukuran sebenarnya
 """)
 
 # Menampilkan data kendaraan dalam tabel
@@ -976,18 +892,3 @@ if st.session_state.vehicles:
                 column_config={
                     "Warna": st.column_config.TextColumn(disabled=True)
                 })
-    
-    # Ringkasan
-    total_area = sum(v['length'] * v['width'] for v in st.session_state.vehicles)
-    ship_area = st.session_state.ship_layout['length'] * st.session_state.ship_layout['width']
-    
-    st.markdown(f"""
-    **Ringkasan:**
-    - **Total Kendaraan:** {len(st.session_state.vehicles)} dari {st.session_state.max_vehicles} maksimum
-    - **Total Luas Terpakai:** {total_area:.1f} m² dari {ship_area:.1f} m² ({total_area/ship_area*100:.1f}%)
-    - **Motor:** {stats['vehicle_types'].get('motor', 0)} unit
-    - **Mobil:** {stats['vehicle_types'].get('car', 0)} unit
-    - **Truk:** {stats['vehicle_types'].get('truck', 0)} unit
-    - **Bus:** {stats['vehicle_types'].get('bus', 0)} unit
-    - **Kustom:** {stats['vehicle_types'].get('custom', 0)} unit
-    """)
