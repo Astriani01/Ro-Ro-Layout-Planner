@@ -680,7 +680,7 @@ with col1:
         st.rerun()
 
 with col2:
-    st.markdown("### 🗺️ Layout Kapal (Diagram Grid Skala 1:1)")
+    st.markdown("### 🗺️ Layout Kapal")
     
     # Info kapal besar
     ship_layout = st.session_state.ship_layout
