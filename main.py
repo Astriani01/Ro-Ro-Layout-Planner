@@ -459,7 +459,7 @@ def create_grid_diagram():
     
     # Konfigurasi layout
     fig.update_layout(
-        title="Diagram Grid Kapal (Skala Sebenarnya)",
+        title="Diagram Grid Kapal",
         xaxis_title="Lebar (meter)",
         yaxis_title="Panjang (meter)",
         width=800,
