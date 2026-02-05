@@ -133,6 +133,40 @@ st.markdown("""
         font-size: 0.9rem;
         margin: 0.5rem 0;
     }
+    
+    .big-number-input {
+        font-size: 1.1rem !important;
+        padding: 0.75rem !important;
+    }
+    
+    .ship-size-display {
+        background-color: #e6f7ff;
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        border: 2px solid #1a2980;
+        text-align: center;
+    }
+    
+    .size-metric {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #1a2980;
+        margin-bottom: 0.5rem;
+    }
+    
+    .size-label {
+        font-size: 0.9rem;
+        color: #666;
+        margin-bottom: 0.25rem;
+    }
+    
+    .grid-density-control {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -152,9 +186,12 @@ class Vehicle:
 # Inisialisasi state session
 if 'ship_layout' not in st.session_state:
     st.session_state.ship_layout = {
-        'length': 50,    # meter
-        'width': 15      # meter
+        'length': 200.0,    # meter - nilai default yang lebih realistis
+        'width': 30.0       # meter - nilai default yang lebih realistis
     }
+
+if 'grid_density' not in st.session_state:
+    st.session_state.grid_density = 1.0  # meter antara titik grid
 
 if 'vehicles' not in st.session_state:
     st.session_state.vehicles = []
@@ -214,31 +251,46 @@ def fits_on_ship(vehicle, ship_layout):
     return True
 
 # Fungsi untuk menemukan posisi kosong untuk kendaraan
-def find_empty_position(vehicle, ship_layout, existing_vehicles, grid_step=0.5):
+def find_empty_position(vehicle, ship_layout, existing_vehicles, grid_step=None):
     """
     Mencari posisi kosong untuk kendaraan dengan grid tertentu
     grid_step: resolusi pencarian dalam meter
     """
+    if grid_step is None:
+        grid_step = st.session_state.grid_density
+    
     max_x = ship_layout['width'] - vehicle['width']
     max_y = ship_layout['length'] - vehicle['length']
+    
+    # Jika kendaraan lebih besar dari kapal
+    if max_x < 0 or max_y < 0:
+        return False
     
     # Generate grid points
     x_points = np.arange(0, max_x + grid_step, grid_step)
     y_points = np.arange(0, max_y + grid_step, grid_step)
     
+    # Optimasi: mulai dari berbagai titik
+    search_points = []
     for y in y_points:
         for x in x_points:
-            vehicle['x'] = round(x, 2)
-            vehicle['y'] = round(y, 2)
-            
-            collision = False
-            for existing in existing_vehicles:
-                if check_collision(vehicle, existing):
-                    collision = True
-                    break
-            
-            if not collision and fits_on_ship(vehicle, ship_layout):
-                return True
+            search_points.append((x, y))
+    
+    # Acak urutan pencarian untuk distribusi yang lebih baik
+    random.shuffle(search_points)
+    
+    for x, y in search_points:
+        vehicle['x'] = round(x, 2)
+        vehicle['y'] = round(y, 2)
+        
+        collision = False
+        for existing in existing_vehicles:
+            if check_collision(vehicle, existing):
+                collision = True
+                break
+        
+        if not collision and fits_on_ship(vehicle, ship_layout):
+            return True
     
     return False
 
@@ -257,6 +309,11 @@ def add_vehicle(name, length, width, vehicle_type="custom", icon="🚙"):
         'color': get_random_color(),
         'icon': icon
     }
+    
+    # Cek apakah kendaraan lebih besar dari kapal
+    if new_vehicle['width'] > ship_layout['width'] or new_vehicle['length'] > ship_layout['length']:
+        st.warning(f"Kendaraan {name} ({length}m × {width}m) terlalu besar untuk kapal ({ship_layout['length']}m × {ship_layout['width']}m).")
+        return
     
     # Temukan posisi kosong
     if not find_empty_position(new_vehicle, ship_layout, st.session_state.vehicles):
@@ -306,31 +363,48 @@ def create_grid_diagram():
     """Membuat diagram grid dengan titik-titik dan kendaraan"""
     ship_layout = st.session_state.ship_layout
     vehicles = st.session_state.vehicles
+    grid_density = st.session_state.grid_density
     
-    # Buat grid titik
-    grid_size = 0.5  # meter
-    x = np.arange(0, ship_layout['width'] + grid_size, grid_size)
-    y = np.arange(0, ship_layout['length'] + grid_size, grid_size)
+    # Optimasi: untuk kapal besar, gunakan grid yang lebih jarang
+    max_grid_points = 1000  # Maksimum titik grid yang ditampilkan
+    ship_area = ship_layout['length'] * ship_layout['width']
+    
+    # Sesuaikan density grid untuk kapal besar
+    display_grid_density = grid_density
+    if ship_area > 100000:  # Untuk kapal sangat besar (> 100,000 m²)
+        display_grid_density = max(grid_density, ship_layout['length'] / 100)
+    
+    # Buat grid titik dengan density yang disesuaikan
+    x = np.arange(0, ship_layout['width'] + display_grid_density, display_grid_density)
+    y = np.arange(0, ship_layout['length'] + display_grid_density, display_grid_density)
+    
+    # Batasi jumlah titik grid untuk performa
+    if len(x) * len(y) > max_grid_points:
+        # Kurangi density untuk mengurangi jumlah titik
+        reduction_factor = math.ceil((len(x) * len(y)) / max_grid_points)
+        x = x[::reduction_factor]
+        y = y[::reduction_factor]
     
     X, Y = np.meshgrid(x, y)
     
     # Buat figure
     fig = go.Figure()
     
-    # Tambahkan titik grid
-    fig.add_trace(go.Scatter(
-        x=X.flatten(),
-        y=Y.flatten(),
-        mode='markers',
-        marker=dict(
-            size=4,
-            color='lightgray',
-            symbol='circle',
-            opacity=0.5
-        ),
-        name='Grid Points',
-        showlegend=False
-    ))
+    # Tambahkan titik grid (hanya untuk kapal kecil-sedang)
+    if ship_area <= 100000:  # Hanya tampilkan grid untuk kapal ≤ 100,000 m²
+        fig.add_trace(go.Scatter(
+            x=X.flatten(),
+            y=Y.flatten(),
+            mode='markers',
+            marker=dict(
+                size=4,
+                color='lightgray',
+                symbol='circle',
+                opacity=0.3
+            ),
+            name='Grid Points',
+            showlegend=False
+        ))
     
     # Outline kapal
     ship_x = [0, ship_layout['width'], ship_layout['width'], 0, 0]
@@ -368,19 +442,20 @@ def create_grid_diagram():
             hoverinfo='text'
         ))
         
-        # Tambahkan titik di tengah dengan ikon
-        center_x = (x0 + x1) / 2
-        center_y = (y0 + y1) / 2
-        
-        fig.add_trace(go.Scatter(
-            x=[center_x],
-            y=[center_y],
-            mode='markers+text',
-            marker=dict(size=0),
-            text=[vehicle['icon']],
-            textfont=dict(size=20),
-            showlegend=False
-        ))
+        # Tambahkan titik di tengah dengan ikon (hanya untuk kendaraan yang cukup besar)
+        if vehicle['length'] > ship_layout['length'] * 0.02 and vehicle['width'] > ship_layout['width'] * 0.02:
+            center_x = (x0 + x1) / 2
+            center_y = (y0 + y1) / 2
+            
+            fig.add_trace(go.Scatter(
+                x=[center_x],
+                y=[center_y],
+                mode='markers+text',
+                marker=dict(size=0),
+                text=[vehicle['icon']],
+                textfont=dict(size=min(20, max(10, int(30 * min(vehicle['length'], vehicle['width']) / max(ship_layout['length'], ship_layout['width']))))),
+                showlegend=False
+            ))
     
     # Konfigurasi layout
     fig.update_layout(
@@ -411,6 +486,7 @@ def export_layout():
         'ship_layout': st.session_state.ship_layout,
         'vehicles': st.session_state.vehicles,
         'next_vehicle_id': st.session_state.next_vehicle_id,
+        'grid_density': st.session_state.grid_density
     }
     return json.dumps(export_data, indent=2)
 
@@ -421,6 +497,7 @@ def import_layout(json_str):
         st.session_state.ship_layout = import_data.get('ship_layout', st.session_state.ship_layout)
         st.session_state.vehicles = import_data.get('vehicles', [])
         st.session_state.next_vehicle_id = import_data.get('next_vehicle_id', st.session_state.next_vehicle_id + 1)
+        st.session_state.grid_density = import_data.get('grid_density', 1.0)
         return True
     except:
         return False
@@ -436,17 +513,23 @@ with st.expander("Klik untuk melihat penjelasan skala"):
     
     col_scale1, col_scale2 = st.columns(2)
     with col_scale1:
-        st.metric("Ukuran Kapal", f"{ship_layout['length']}m × {ship_layout['width']}m")
+        st.metric("Ukuran Kapal", f"{ship_layout['length']:.1f}m × {ship_layout['width']:.1f}m")
     with col_scale2:
-        st.metric("Luas Kapal", f"{ship_layout['length'] * ship_layout['width']:.1f} m²")
+        area_km2 = (ship_layout['length'] * ship_layout['width']) / 1_000_000
+        st.metric("Luas Kapal", f"{area_km2:.3f} km²", f"{ship_layout['length'] * ship_layout['width']:,.1f} m²")
     
     st.info(f"""
     **Diagram Kartesius Skala 1:1:**
-    - **Sumbu X**: Lebar kapal (0 sampai {ship_layout['width']} meter)
-    - **Sumbu Y**: Panjang kapal (0 sampai {ship_layout['length']} meter)
-    - **Setiap titik grid**: Berjarak 0.5 meter
+    - **Sumbu X**: Lebar kapal (0 sampai {ship_layout['width']:,.1f} meter)
+    - **Sumbu Y**: Panjang kapal (0 sampai {ship_layout['length']:,.1f} meter)
+    - **Grid density**: {st.session_state.grid_density} meter
     - **Ukuran kendaraan**: Ditampilkan sesuai ukuran sebenarnya
     - **Skala**: 1 pixel = 1 meter (proporsional)
+    
+    **Catatan untuk kapal besar:**
+    - Untuk kapal dengan panjang > 1.000m, grid akan disesuaikan otomatis
+    - Gunakan kontrol grid density untuk mengatur kepadatan titik
+    - Visualisasi dioptimalkan untuk performa
     """)
 
 # Layout utama
@@ -455,27 +538,69 @@ col1, col2, col3 = st.columns([1, 2, 1])
 with col1:
     st.markdown("### ⚙️ Kontrol Layout Kapal")
     
-    # Input ukuran kapal (tanpa jumlah lajur)
+    # Kontrol density grid
+    st.markdown('<div class="grid-density-control">', unsafe_allow_html=True)
+    st.markdown("**🔄 Density Grid**")
+    grid_density = st.slider(
+        "Jarak antar titik grid (meter):",
+        min_value=0.1,
+        max_value=50.0,
+        value=st.session_state.grid_density,
+        step=0.1,
+        format="%.1f",
+        help="Atur jarak antar titik grid. Nilai lebih kecil = grid lebih padat, lebih besar = grid lebih jarang"
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Input ukuran kapal dengan batas hingga 1.000.000 meter
     ship_length = st.number_input(
         "Panjang Kapal (meter):", 
-        min_value=10.0, max_value=1000000.0, value=float(st.session_state.ship_layout['length']), 
-        step=0.5, key="ship_length_input", format="%.1f"
+        min_value=10.0, 
+        max_value=1000000.0, 
+        value=float(st.session_state.ship_layout['length']), 
+        step=1.0, 
+        key="ship_length_input", 
+        format="%.1f",
+        help="Masukkan panjang kapal dalam meter (10 - 1.000.000 meter)"
     )
     
     ship_width = st.number_input(
         "Lebar Kapal (meter):", 
-        min_value=5.0, max_value=1000000.0, value=float(st.session_state.ship_layout['width']), 
-        step=0.5, key="ship_width_input", format="%.1f"
+        min_value=5.0, 
+        max_value=1000000.0, 
+        value=float(st.session_state.ship_layout['width']), 
+        step=1.0, 
+        key="ship_width_input", 
+        format="%.1f",
+        help="Masukkan lebar kapal dalam meter (5 - 1.000.000 meter)"
     )
     
-    # Update layout kapal (tanpa jumlah lajur)
-    if st.button("🔄 Update Layout Kapal", use_container_width=True):
+    # Tampilkan ukuran kapal dengan format yang mudah dibaca
+    st.markdown('<div class="ship-size-display">', unsafe_allow_html=True)
+    st.markdown(f'<div class="size-label">Ukuran Kapal Saat Ini</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="size-metric">{ship_length:,.1f}m × {ship_width:,.1f}m</div>', unsafe_allow_html=True)
+    
+    # Konversi ke kilometer untuk kapal besar
+    if ship_length >= 1000 or ship_width >= 1000:
+        length_km = ship_length / 1000
+        width_km = ship_width / 1000
+        st.markdown(f'<div class="size-label">({length_km:,.1f}km × {width_km:,.1f}km)</div>', unsafe_allow_html=True)
+    
+    area_m2 = ship_length * ship_width
+    area_km2 = area_m2 / 1_000_000
+    st.markdown(f'<div class="size-label">Luas: {area_m2:,.0f} m² ({area_km2:.3f} km²)</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Update layout kapal
+    if st.button("🔄 Update Layout Kapal", use_container_width=True, type="primary"):
         st.session_state.ship_layout = {
             'length': float(ship_length),
             'width': float(ship_width)
         }
+        st.session_state.grid_density = float(grid_density)
         
         # Periksa apakah kendaraan masih muat
+        vehicles_to_remove = []
         for vehicle in st.session_state.vehicles:
             if not fits_on_ship(vehicle, st.session_state.ship_layout):
                 st.warning(f"Kendaraan {vehicle['name']} tidak muat setelah resize kapal!")
@@ -483,7 +608,11 @@ with col1:
                 if not find_empty_position(vehicle, st.session_state.ship_layout, 
                                          [v for v in st.session_state.vehicles if v['id'] != vehicle['id']]):
                     st.error(f"Tidak ada ruang untuk {vehicle['name']}. Kendaraan akan dihapus.")
-                    remove_vehicle(vehicle['id'])
+                    vehicles_to_remove.append(vehicle['id'])
+        
+        # Hapus kendaraan yang tidak muat
+        for vehicle_id in vehicles_to_remove:
+            remove_vehicle(vehicle_id)
         
         st.success("Layout kapal berhasil diupdate!")
         st.rerun()
@@ -536,9 +665,9 @@ with col1:
     
     col_custom_size1, col_custom_size2 = st.columns(2)
     with col_custom_size1:
-        custom_length = st.number_input("Panjang (m):", min_value=0.5, max_value=30.0, value=6.0, step=0.1, format="%.1f")
+        custom_length = st.number_input("Panjang (m):", min_value=0.5, max_value=1000.0, value=6.0, step=0.1, format="%.1f")
     with col_custom_size2:
-        custom_width = st.number_input("Lebar (m):", min_value=0.5, max_value=10.0, value=2.0, step=0.1, format="%.1f")
+        custom_width = st.number_input("Lebar (m):", min_value=0.5, max_value=100.0, value=2.0, step=0.1, format="%.1f")
     
     col_custom1, col_custom2 = st.columns(2)
     with col_custom1:
@@ -552,6 +681,18 @@ with col1:
 
 with col2:
     st.markdown("### 🗺️ Layout Kapal (Diagram Grid Skala 1:1)")
+    
+    # Info kapal besar
+    ship_layout = st.session_state.ship_layout
+    if ship_layout['length'] > 1000 or ship_layout['width'] > 1000:
+        st.warning(f"""
+        **Kapal sangat besar terdeteksi!** ({ship_layout['length']:,.0f}m × {ship_layout['width']:,.0f}m)
+        
+        Untuk performa optimal:
+        1. Gunakan grid density yang lebih besar
+        2. Visualisasi akan menampilkan grid yang disederhanakan
+        3. Kendaraan kecil mungkin tidak terlihat detailnya
+        """)
     
     # Hanya tampilkan diagram grid sederhana
     fig = create_grid_diagram()
@@ -569,24 +710,31 @@ with col2:
         st.metric("Jumlah Kendaraan", stats['vehicle_count'])
     
     with col_stat2:
-        st.metric("Luas Terpakai", f"{stats['used_area']:.1f} m²")
+        area_m2 = stats['used_area']
+        if area_m2 > 1000000:
+            area_text = f"{area_m2/1000000:.2f} km²"
+        else:
+            area_text = f"{area_m2:,.1f} m²"
+        st.metric("Luas Terpakai", area_text)
     
     with col_stat3:
-        st.metric("Penggunaan Kapal", f"{stats['usage_percentage']:.1f}%")
+        st.metric("Penggunaan Kapal", f"{stats['usage_percentage']:.2f}%")
     
     # Informasi posisi
     with st.expander("📍 Informasi Koordinat"):
         ship_layout = st.session_state.ship_layout
         st.write(f"**Sistem Koordinat:**")
         st.write(f"- Titik (0, 0): Pojok kiri depan kapal")
-        st.write(f"- Titik ({ship_layout['width']}, 0): Pojok kanan depan kapal")
-        st.write(f"- Titik (0, {ship_layout['length']}): Pojok kiri belakang kapal")
-        st.write(f"- Titik ({ship_layout['width']}, {ship_layout['length']}): Pojok kanan belakang kapal")
+        st.write(f"- Titik ({ship_layout['width']:,.1f}, 0): Pojok kanan depan kapal")
+        st.write(f"- Titik (0, {ship_layout['length']:,.1f}): Pojok kiri belakang kapal")
+        st.write(f"- Titik ({ship_layout['width']:,.1f}, {ship_layout['length']:,.1f}): Pojok kanan belakang kapal")
         
         if st.session_state.vehicles:
             st.write("**Koordinat Kendaraan:**")
-            for vehicle in st.session_state.vehicles:
+            for vehicle in st.session_state.vehicles[:10]:  # Batasi 10 kendaraan pertama
                 st.code(f"{vehicle['name']}: ({vehicle['x']:.1f}, {vehicle['y']:.1f}) - ({vehicle['x']+vehicle['width']:.1f}, {vehicle['y']+vehicle['length']:.1f})")
+            if len(st.session_state.vehicles) > 10:
+                st.info(f"Menampilkan 10 dari {len(st.session_state.vehicles)} kendaraan. Gunakan tabel di bawah untuk melihat semua.")
     
     # Statistik per tipe kendaraan
     if stats['vehicle_types']:
@@ -626,16 +774,22 @@ with col2:
         with col_pos1:
             new_x = st.number_input(
                 "Posisi X (meter dari kiri):", 
-                min_value=0.0, max_value=ship_width, 
-                value=float(selected_vehicle['x']), step=0.1, format="%.1f",
+                min_value=0.0, 
+                max_value=float(ship_layout['width']), 
+                value=float(selected_vehicle['x']), 
+                step=1.0, 
+                format="%.1f",
                 key=f"pos_x_{selected_vehicle_id}"
             )
         
         with col_pos2:
             new_y = st.number_input(
                 "Posisi Y (meter dari depan):", 
-                min_value=0.0, max_value=ship_length, 
-                value=float(selected_vehicle['y']), step=0.1, format="%.1f",
+                min_value=0.0, 
+                max_value=float(ship_layout['length']), 
+                value=float(selected_vehicle['y']), 
+                step=1.0, 
+                format="%.1f",
                 key=f"pos_y_{selected_vehicle_id}"
             )
         
@@ -668,7 +822,7 @@ with col2:
         st.markdown("**Kontrol Arah:**")
         col_move1, col_move2, col_move3 = st.columns(3)
         
-        move_step = st.slider("Langkah pergerakan (meter):", 0.1, 2.0, 0.5, 0.1)
+        move_step = st.slider("Langkah pergerakan (meter):", 1.0, 100.0, 10.0, 1.0)
         
         with col_move1:
             if st.button("⬆️ Maju", use_container_width=True):
@@ -742,12 +896,12 @@ with col3:
             with col_edit1:
                 new_length = st.number_input("Panjang Baru (m):", 
                                            value=float(vehicle['length']), 
-                                           min_value=0.5, max_value=30.0, step=0.1,
+                                           min_value=0.5, max_value=1000.0, step=0.1,
                                            format="%.1f")
             with col_edit2:
                 new_width = st.number_input("Lebar Baru (m):", 
                                           value=float(vehicle['width']), 
-                                          min_value=0.5, max_value=10.0, step=0.1,
+                                          min_value=0.5, max_value=100.0, step=0.1,
                                           format="%.1f")
             
             if st.form_submit_button("💾 Simpan Perubahan", use_container_width=True):
@@ -835,28 +989,31 @@ with col3:
 st.divider()
 st.markdown("### 📖 Cara Menggunakan (Diagram Kartesius):")
 st.markdown("""
-1. **Diagram Kartesius Skala 1:1**: 
-   - Sumbu X = Lebar kapal (meter dari kiri)
-   - Sumbu Y = Panjang kapal (meter dari depan)
-   - Setiap titik = posisi yang mungkin untuk penempatan kendaraan
+**Fitur Kapal Besar (hingga 1.000.000 meter):**
 
-2. **Ukuran Sebenarnya**:
-   - Kendaraan ditampilkan dengan ukuran sebenarnya (dalam meter)
-   - Motor: 2.0m × 0.8m
-   - Mobil Kecil: 4.5m × 1.8m
-   - Mobil Sedang: 5.0m × 2.0m
-   - Truk: 10.0m × 2.5m
-   - Bus: 12.0m × 2.5m
+1. **Input Ukuran Besar:**
+   - Panjang kapal: 10 - 1.000.000 meter
+   - Lebar kapal: 5 - 1.000.000 meter
+   - Nilai dapat dimasukkan dalam format biasa (misal: 4000)
 
-3. **Kontrol Presisi**:
+2. **Optimasi Visualisasi:**
+   - Grid density otomatis disesuaikan untuk kapal besar
+   - Untuk kapal > 1.000m, grid lebih jarang untuk performa
+   - Kendaraan kecil di kapal besar mungkin tidak terlihat detail
+
+3. **Kontrol Presisi:**
    - Atur posisi dengan input koordinat (X, Y) dalam meter
-   - Gunakan tombol arah dengan langkah yang dapat disesuaikan
+   - Gunakan tombol arah dengan langkah yang dapat disesuaikan (1-100m)
    - Sistem otomatis mencegah tabrakan
 
-4. **Visualisasi**:
-   - Titik-titik grid untuk referensi posisi
-   - Garis bantu untuk lajur kapal
-   - Skala proporsional 1:1 antara gambar dan ukuran sebenarnya
+4. **Satuan Konversi:**
+   - Untuk kapal > 1.000m, ukuran juga ditampilkan dalam kilometer
+   - Luas kapal ditampilkan dalam m² dan km²
+
+5. **Tips untuk Kapal Sangat Besar:**
+   - Gunakan grid density lebih besar (10-50m) untuk performa
+   - Atur langkah pergerakan lebih besar (10-100m)
+   - Gunakan kontrol posisi manual untuk presisi tinggi
 """)
 
 # Menampilkan data kendaraan dalam tabel
@@ -900,7 +1057,7 @@ if st.session_state.vehicles:
     st.markdown(f"""
     **Ringkasan:**
     - **Total Kendaraan:** {len(st.session_state.vehicles)}
-    - **Total Luas Terpakai:** {total_area:.1f} m² dari {ship_area:.1f} m² ({total_area/ship_area*100:.1f}%)
+    - **Total Luas Terpakai:** {total_area:,.1f} m² dari {ship_area:,.0f} m² ({total_area/ship_area*100:.3f}%)
     - **Motor:** {stats['vehicle_types'].get('motor', 0)} unit
     - **Mobil:** {stats['vehicle_types'].get('car', 0)} unit
     - **Truk:** {stats['vehicle_types'].get('truck', 0)} unit
