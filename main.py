@@ -458,13 +458,13 @@ with col1:
     # Input ukuran kapal (tanpa jumlah lajur)
     ship_length = st.number_input(
         "Panjang Kapal (meter):", 
-        min_value=10.0, max_value=200.0, value=float(st.session_state.ship_layout['length']), 
+        min_value=10.0, max_value=1000000.0, value=float(st.session_state.ship_layout['length']), 
         step=0.5, key="ship_length_input", format="%.1f"
     )
     
     ship_width = st.number_input(
         "Lebar Kapal (meter):", 
-        min_value=5.0, max_value=50.0, value=float(st.session_state.ship_layout['width']), 
+        min_value=5.0, max_value=1000000.0, value=float(st.session_state.ship_layout['width']), 
         step=0.5, key="ship_width_input", format="%.1f"
     )
     
